@@ -1,0 +1,176 @@
+package com.memos.infrastructure.persistence.adapter;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+
+import com.memos.application.rag.RetrievalPort;
+import com.memos.application.rag.RetrievedChunk;
+import com.memos.domain.common.PageRequest;
+import com.memos.domain.document.DocumentChunk;
+import com.memos.domain.document.DocumentChunkRepositoryPort;
+import com.memos.domain.document.DocumentSourceType;
+import com.memos.domain.document.DocumentStatus;
+import com.memos.domain.user.Role;
+import com.memos.infrastructure.persistence.entity.DocumentEntity;
+import com.memos.infrastructure.persistence.entity.UserEntity;
+import com.memos.infrastructure.persistence.repository.DocumentJpaRepository;
+import com.memos.infrastructure.persistence.repository.UserJpaRepository;
+
+@Testcontainers
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@ActiveProfiles("test")
+class DocumentChunkRepositoryAdapterIT {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+            DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"));
+
+    @DynamicPropertySource
+    static void registerProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+    }
+
+    @Autowired
+    private DocumentChunkRepositoryPort documentChunkRepositoryPort;
+
+    @Autowired
+    private RetrievalPort retrievalPort;
+
+    @Autowired
+    private UserJpaRepository userJpaRepository;
+
+    @Autowired
+    private DocumentJpaRepository documentJpaRepository;
+
+    private static final int DIMENSIONS = 768;
+
+    @Test
+    void findSimilarOrdersChunksByCosineSimilarityWithinOwnersDocuments() {
+        UUID ownerId = createUser("owner@example.com");
+        UUID otherOwnerId = createUser("other@example.com");
+
+        UUID documentId = createDocument(ownerId, DocumentStatus.COMPLETED);
+        UUID otherDocumentId = createDocument(otherOwnerId, DocumentStatus.COMPLETED);
+
+        DocumentChunk matching = chunk(documentId, 0, "matching chunk", unitVector(0));
+        DocumentChunk orthogonal = chunk(documentId, 1, "orthogonal chunk", unitVector(1));
+        DocumentChunk opposite = chunk(documentId, 2, "opposite chunk", negate(unitVector(0)));
+        DocumentChunk otherOwnersChunk = chunk(otherDocumentId, 0, "other owner's chunk", unitVector(0));
+
+        documentChunkRepositoryPort.saveAll(List.of(matching, orthogonal, opposite, otherOwnersChunk));
+
+        List<RetrievedChunk> results = retrievalPort.findSimilar(ownerId, unitVector(0), 10);
+
+        assertThat(results).hasSize(3);
+        assertThat(results.get(0).content()).isEqualTo("matching chunk");
+        assertThat(results.get(0).score()).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-3));
+        assertThat(results.get(1).content()).isEqualTo("orthogonal chunk");
+        assertThat(results.get(2).content()).isEqualTo("opposite chunk");
+        assertThat(results).extracting(RetrievedChunk::content).doesNotContain("other owner's chunk");
+    }
+
+    @Test
+    void findSimilarExcludesChunksFromIncompleteDocuments() {
+        UUID ownerId = createUser("pending-owner@example.com");
+        UUID documentId = createDocument(ownerId, DocumentStatus.PROCESSING);
+
+        documentChunkRepositoryPort.saveAll(List.of(chunk(documentId, 0, "not yet ready", unitVector(0))));
+
+        List<RetrievedChunk> results = retrievalPort.findSimilar(ownerId, unitVector(0), 10);
+
+        assertThat(results).isEmpty();
+    }
+
+    @Test
+    void findByDocumentIdPaginatesChunksAndSupportsCountAndDelete() {
+        UUID ownerId = createUser("paginate-owner@example.com");
+        UUID documentId = createDocument(ownerId, DocumentStatus.COMPLETED);
+
+        documentChunkRepositoryPort.saveAll(List.of(
+                chunk(documentId, 0, "chunk zero", unitVector(0)),
+                chunk(documentId, 1, "chunk one", unitVector(1)),
+                chunk(documentId, 2, "chunk two", unitVector(2))));
+
+        assertThat(documentChunkRepositoryPort.countByDocumentId(documentId)).isEqualTo(3);
+
+        var firstPage = documentChunkRepositoryPort.findByDocumentId(documentId, PageRequest.of(0, 2));
+        assertThat(firstPage.items()).hasSize(2);
+        assertThat(firstPage.totalElements()).isEqualTo(3);
+        assertThat(firstPage.totalPages()).isEqualTo(2);
+
+        documentChunkRepositoryPort.deleteByDocumentId(documentId);
+        assertThat(documentChunkRepositoryPort.countByDocumentId(documentId)).isZero();
+    }
+
+    private UUID createUser(String email) {
+        Instant now = Instant.now();
+        UserEntity user = userJpaRepository.save(UserEntity.builder()
+                .email(email)
+                .passwordHash("hashed")
+                .fullName("Test User")
+                .role(Role.USER)
+                .enabled(true)
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
+        return user.getId();
+    }
+
+    private UUID createDocument(UUID ownerId, DocumentStatus status) {
+        Instant now = Instant.now();
+        DocumentEntity document = documentJpaRepository.save(DocumentEntity.builder()
+                .ownerId(ownerId)
+                .title("Test document")
+                .sourceType(DocumentSourceType.MARKDOWN)
+                .sourceUri("/tmp/test.md")
+                .status(status)
+                .metadata(Map.of())
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
+        return document.getId();
+    }
+
+    private DocumentChunk chunk(UUID documentId, int chunkIndex, String content, float[] embedding) {
+        return DocumentChunk.builder()
+                .documentId(documentId)
+                .chunkIndex(chunkIndex)
+                .content(content)
+                .embedding(embedding)
+                .tokenCount(content.split("\\s+").length)
+                .metadata(Map.of())
+                .createdAt(Instant.now())
+                .build();
+    }
+
+    private float[] unitVector(int dimensionIndex) {
+        float[] vector = new float[DIMENSIONS];
+        vector[dimensionIndex] = 1.0f;
+        return vector;
+    }
+
+    private float[] negate(float[] vector) {
+        float[] negated = new float[vector.length];
+        for (int i = 0; i < vector.length; i++) {
+            negated[i] = -vector[i];
+        }
+        return negated;
+    }
+}

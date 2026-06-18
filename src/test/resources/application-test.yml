@@ -1,0 +1,59 @@
+spring:
+  cache:
+    type: simple
+
+  flyway:
+    enabled: true
+
+memos:
+  jwt:
+    secret: test-only-secret-key-must-be-at-least-256-bits-long-for-hmac-sha-signing
+    access-token-expiration-ms: 3600000
+    refresh-token-expiration-ms: 604800000
+    issuer: memos-backend-test
+
+  ai:
+    default-provider: GEMINI
+    embedding:
+      provider: GEMINI
+      dimensions: 768
+    providers:
+      gemini:
+        api-key: test-gemini-key
+        base-url: https://generativelanguage.googleapis.com/v1beta/openai
+        chat-model: gemini-2.0-flash
+        embedding-model: text-embedding-004
+        temperature: 0.3
+      openai:
+        api-key: sk-test-not-configured
+        base-url: https://api.openai.com
+        chat-model: gpt-4o-mini
+        embedding-model: text-embedding-3-small
+        temperature: 0.3
+      claude:
+        api-key: sk-ant-test-not-configured
+        base-url: https://api.anthropic.com
+        chat-model: claude-3-5-sonnet-latest
+        temperature: 0.3
+        max-tokens: 1024
+
+  rag:
+    top-k: 5
+    history-window: 10
+    max-context-chars: 12000
+
+  ingestion:
+    chunk-size-tokens: 500
+    chunk-overlap-tokens: 50
+    max-upload-size-bytes: 26214400
+    git:
+      allowed-extensions: .md,.markdown,.txt,.java,.py,.js,.ts,.tsx,.jsx,.go,.rb,.rs,.kt,.yaml,.yml,.json,.adoc,.rst
+      max-file-size-bytes: 1048576
+      clone-timeout-seconds: 120
+
+  cors:
+    allowed-origins: http://localhost:3000
+
+logging:
+  level:
+    com.memos: INFO
