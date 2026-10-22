@@ -340,4 +340,10 @@ class DocumentControllerTest {
 
         verify(documentIngestionService, never()).delete(any());
     }
+
+    @Test
+    void unknownPathsReturnNotFoundInsteadOfServerError() throws Exception {
+        mockMvc.perform(get("/api/v1/documents/{id}/no-such-endpoint", UUID.randomUUID()).with(asUser()))
+                .andExpect(status().isNotFound());
+    }
 }
