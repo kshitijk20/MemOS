@@ -31,13 +31,16 @@ import com.memos.domain.common.PageRequest;
 import com.memos.domain.common.PageResult;
 import com.memos.domain.conversation.Conversation;
 import com.memos.domain.conversation.Message;
+import com.memos.domain.exception.DomainException;
 import com.memos.infrastructure.security.CustomUserPrincipal;
 import com.memos.web.common.PageResponse;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Tag(name = "Conversations")
 @RestController
 @RequestMapping("/api/v1/conversations")
@@ -164,9 +167,14 @@ public class ConversationController {
                 emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(done)));
                 emitter.complete();
             } catch (Exception e) {
+                log.error("Streaming answer failed for conversation {}", id, e);
+                // Domain exceptions carry user-facing messages; anything else could leak internals.
+                String message = e instanceof DomainException
+                        ? e.getMessage()
+                        : "Something went wrong while answering. Try again.";
                 try {
                     emitter.send(SseEmitter.event()
-                            .data("{\"type\":\"error\",\"message\":" + objectMapper.writeValueAsString(e.getMessage()) + "}"));
+                            .data("{\"type\":\"error\",\"message\":" + objectMapper.writeValueAsString(message) + "}"));
                 } catch (IOException ignored) {}
                 emitter.completeWithError(e);
             }

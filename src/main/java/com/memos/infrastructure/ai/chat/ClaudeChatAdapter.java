@@ -22,6 +22,7 @@ import com.memos.domain.ai.ChatCompletionRequest;
 import com.memos.domain.ai.ChatCompletionResult;
 import com.memos.domain.ai.ChatPort;
 import com.memos.domain.exception.AiProviderException;
+import com.memos.domain.exception.ProviderErrorMessages;
 import com.memos.infrastructure.ai.config.AiProvidersProperties;
 
 import io.micrometer.observation.ObservationRegistry;
@@ -87,7 +88,7 @@ public class ClaudeChatAdapter implements ChatPort {
                     .completionTokens(usage != null ? usage.getCompletionTokens() : null)
                     .build();
         } catch (Exception e) {
-            throw new AiProviderException("Claude chat completion failed: " + e.getMessage(), e);
+            throw new AiProviderException(ProviderErrorMessages.forChat("Claude", e), e);
         }
     }
 
@@ -115,7 +116,7 @@ public class ClaudeChatAdapter implements ChatPort {
                         }
                     });
         } catch (Exception e) {
-            throw new AiProviderException("Claude streaming failed: " + e.getMessage(), e);
+            throw new AiProviderException(ProviderErrorMessages.forChat("Claude", e), e);
         }
     }
 
