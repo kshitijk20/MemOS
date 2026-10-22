@@ -17,8 +17,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.memos.domain.exception.DuplicateResourceException;
+import com.memos.domain.exception.AccessDeniedException;
 import com.memos.domain.exception.InvalidCredentialsException;
 import com.memos.domain.user.Role;
 import com.memos.domain.user.User;
@@ -49,7 +51,7 @@ class AuthApplicationServiceTest {
         when(passwordHasherPort.hash("plaintext-pw")).thenReturn("hashed-pw");
         when(userRepositoryPort.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        User result = authApplicationService.register(new RegisterCommand("alice@example.com", "plaintext-pw", "Alice"));
+        User result = authApplicationService.register(new RegisterCommand("alice@example.com", "plaintext-pw", "Alice", null));
 
         assertThat(result.getEmail()).isEqualTo("alice@example.com");
         assertThat(result.getPasswordHash()).isEqualTo("hashed-pw");
@@ -62,7 +64,7 @@ class AuthApplicationServiceTest {
     void registerRejectsDuplicateEmail() {
         when(userRepositoryPort.existsByEmail("alice@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> authApplicationService.register(new RegisterCommand("alice@example.com", "pw", "Alice")))
+        assertThatThrownBy(() -> authApplicationService.register(new RegisterCommand("alice@example.com", "pw", "Alice", null)))
                 .isInstanceOf(DuplicateResourceException.class);
 
         verify(userRepositoryPort, never()).save(any());
@@ -156,5 +158,41 @@ class AuthApplicationServiceTest {
         authApplicationService.logout("refresh-token");
 
         verify(tokenIssuerPort).revokeRefreshToken("refresh-token");
+    }
+
+    @Test
+    void registrationCanBeClosed() {
+        ReflectionTestUtils.setField(authApplicationService, "registrationEnabled", false);
+
+        assertThatThrownBy(() -> authApplicationService.register(new RegisterCommand("bob@example.com", "password1", "Bob", null)))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("closed");
+        assertThat(authApplicationService.registrationPolicy().open()).isFalse();
+        verify(userRepositoryPort, never()).save(any());
+    }
+
+    @Test
+    void inviteCodeIsRequiredWhenConfigured() {
+        ReflectionTestUtils.setField(authApplicationService, "inviteCode", "let-me-in");
+        assertThat(authApplicationService.registrationPolicy().inviteCodeRequired()).isTrue();
+
+        assertThatThrownBy(() -> authApplicationService.register(new RegisterCommand("bob@example.com", "password1", "Bob", null)))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> authApplicationService.register(new RegisterCommand("bob@example.com", "password1", "Bob", "wrong")))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(userRepositoryPort, never()).save(any());
+
+        when(userRepositoryPort.existsByEmail("bob@example.com")).thenReturn(false);
+        when(passwordHasherPort.hash("password1")).thenReturn("hashed");
+        when(userRepositoryPort.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        assertThat(authApplicationService.register(
+                new RegisterCommand("bob@example.com", "password1", "Bob", " let-me-in ")).getEmail())
+                .isEqualTo("bob@example.com");
+    }
+
+    @Test
+    void openRegistrationNeedsNoInviteCode() {
+        assertThat(authApplicationService.registrationPolicy())
+                .isEqualTo(new AuthApplicationService.RegistrationPolicy(true, false));
     }
 }

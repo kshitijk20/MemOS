@@ -1,8 +1,13 @@
 import { apiClient } from './client'
-import type { AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, UserResponse } from './types'
+import type { AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, RegistrationPolicy, UserResponse } from './types'
 
 export async function register(payload: RegisterRequest): Promise<UserResponse> {
   const response = await apiClient.post<UserResponse>('/api/v1/auth/register', payload)
+  return response.data
+}
+
+export async function getRegistrationPolicy(): Promise<RegistrationPolicy> {
+  const response = await apiClient.get<RegistrationPolicy>('/api/v1/auth/registration')
   return response.data
 }
 

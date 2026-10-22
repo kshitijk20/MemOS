@@ -28,4 +28,7 @@ public interface DocumentChunkRepositoryPort {
     List<DocumentChunk> replaceForDocument(UUID documentId, List<DocumentChunk> chunks);
 
     long countByDocumentId(UUID documentId);
+
+    /** Chunks across all of the owner's documents. */
+    long countByOwnerId(UUID ownerId);
 }

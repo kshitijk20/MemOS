@@ -251,7 +251,6 @@ public class DocumentController {
             deleteQuietly(stored.path());
             throw e;
         }
-        document = documentIngestionService.reingest(document);
         documentIngestionService.ingest(document.getId());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
     }

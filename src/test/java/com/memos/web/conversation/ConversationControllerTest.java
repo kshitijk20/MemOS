@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
@@ -27,6 +28,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.memos.application.conversation.ConversationApplicationService;
+import com.memos.application.limits.UsageLimitService;
 import com.memos.application.rag.RagQueryService;
 import com.memos.domain.ai.AiProvider;
 import com.memos.domain.common.PageRequest;
@@ -37,6 +39,7 @@ import com.memos.domain.conversation.Message;
 import com.memos.domain.conversation.MessageFeedback;
 import com.memos.domain.conversation.MessageRole;
 import com.memos.domain.exception.ResourceNotFoundException;
+import com.memos.domain.exception.RateLimitExceededException;
 import com.memos.domain.user.Role;
 import com.memos.domain.user.User;
 import com.memos.infrastructure.security.CustomUserPrincipal;
@@ -55,6 +58,9 @@ class ConversationControllerTest {
 
     @MockitoBean
     private RagQueryService ragQueryService;
+
+    @MockitoBean
+    private UsageLimitService usageLimitService;
 
     @MockitoBean
     private JwtService jwtService;
@@ -280,5 +286,23 @@ class ConversationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"feedback\":\"MEH\"}"))
                 .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void questionsOverTheLimitGet429WithRetryAfterBeforeAnyWork() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new RateLimitExceededException("You're asking questions too quickly.", 30))
+                .when(usageLimitService).checkQuestion(userId);
+
+        mockMvc.perform(post("/api/v1/conversations/{id}/messages/stream", conversationId)
+                        .with(asUser())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"hi\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "30"))
+                .andExpect(jsonPath("$.message").value("You're asking questions too quickly."));
+
+        org.mockito.Mockito.verifyNoInteractions(ragQueryService);
     }
 }

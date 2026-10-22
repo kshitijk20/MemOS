@@ -2,6 +2,7 @@ package com.memos.web.common;
 
 import java.util.stream.Collectors;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -18,6 +19,7 @@ import com.memos.domain.exception.AiProviderException;
 import com.memos.domain.exception.DuplicateResourceException;
 import com.memos.domain.exception.IngestionException;
 import com.memos.domain.exception.InvalidRequestException;
+import com.memos.domain.exception.RateLimitExceededException;
 import com.memos.domain.exception.InvalidCredentialsException;
 import com.memos.domain.exception.ResourceNotFoundException;
 
@@ -75,6 +77,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'.", request);
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimit(RateLimitExceededException ex, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.TOO_MANY_REQUESTS;
+        return ResponseEntity.status(status)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(ApiErrorResponse.of(status.value(), status.getReasonPhrase(), ex.getMessage(), request.getRequestURI()));
     }
 
     @ExceptionHandler(InvalidRequestException.class)

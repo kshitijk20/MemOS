@@ -10,9 +10,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import com.memos.application.limits.UsageLimitService;
 import com.memos.domain.ai.EmbeddingPort;
 import com.memos.domain.document.Document;
 import com.memos.domain.document.DocumentChunk;
@@ -45,6 +47,15 @@ public class DocumentIngestionService {
     private final ChunkingPort chunkingPort;
     private final EmbeddingPort embeddingPort;
     private final IngestionProgressStore progressStore;
+    private final UsageLimitService usageLimitService;
+
+    /** Documents one user may have; 0 disables the limit. */
+    @Value("${memos.limits.max-documents-per-user:100}")
+    private int maxDocumentsPerUser = 100;
+
+    /** Stored chunks (search sections) one user may have across all documents; 0 disables the limit. */
+    @Value("${memos.limits.max-chunks-per-user:20000}")
+    private int maxChunksPerUser = 20000;
 
     public Document submit(
             UUID ownerId,
@@ -54,6 +65,11 @@ public class DocumentIngestionService {
             String sourceFingerprint,
             Map<String, Object> metadata) {
         rejectDuplicate(ownerId, sourceFingerprint, null);
+        if (maxDocumentsPerUser > 0 && documentRepositoryPort.countByOwnerId(ownerId) >= maxDocumentsPerUser) {
+            throw new IngestionException("You've reached the limit of " + maxDocumentsPerUser
+                    + (maxDocumentsPerUser == 1 ? " document" : " documents") + ". Delete some to add more.");
+        }
+        usageLimitService.checkIngestion(ownerId);
 
         Instant now = Instant.now();
         Document document = Document.builder()
@@ -75,11 +91,13 @@ public class DocumentIngestionService {
         if (document.getStatus() != DocumentStatus.FAILED) {
             throw new IngestionException("Only failed documents can be retried.");
         }
+        usageLimitService.checkIngestion(document.getOwnerId());
         return documentRepositoryPort.save(document.resetForRetry());
     }
 
     public Document reingest(Document document) {
         rejectInFlight(document);
+        usageLimitService.checkIngestion(document.getOwnerId());
         return documentRepositoryPort.save(document.prepareForReingest());
     }
 
@@ -89,10 +107,13 @@ public class DocumentIngestionService {
         }
     }
 
+    /** Swaps in a newly uploaded file and queues the document for re-ingestion (returns it PENDING). */
     public Document replaceFileSource(Document document, String sourceUri, String fingerprint, Map<String, Object> metadata) {
         rejectInFlight(document);
         rejectDuplicate(document.getOwnerId(), fingerprint, document.getId());
-        Document updated = documentRepositoryPort.save(document.withSource(sourceUri, fingerprint, metadata));
+        usageLimitService.checkIngestion(document.getOwnerId());
+        Document updated = documentRepositoryPort.save(
+                document.withSource(sourceUri, fingerprint, metadata).prepareForReingest());
         // A failed ingestion keeps its upload for Retry; once replaced, that copy is unreachable.
         if (!sourceUri.equals(document.getSourceUri())) {
             deleteTempSourceFile(document);
@@ -229,6 +250,7 @@ public class DocumentIngestionService {
         }
 
         int total = allChunks.size();
+        enforceChunkLimit(document, total);
         progressStore.update(document.getId(), "EMBEDDING", 0, total);
 
         List<DocumentChunk> result = new ArrayList<>(total);
@@ -258,6 +280,20 @@ public class DocumentIngestionService {
         }
 
         return result;
+    }
+
+    /** Runs before embedding, so an over-limit document fails without spending embedding quota. */
+    private void enforceChunkLimit(Document document, int newChunks) {
+        if (maxChunksPerUser <= 0) {
+            return;
+        }
+        // Re-ingesting replaces this document's own chunks, so they don't count against it.
+        long used = documentChunkRepositoryPort.countByOwnerId(document.getOwnerId())
+                - documentChunkRepositoryPort.countByDocumentId(document.getId());
+        if (used + newChunks > maxChunksPerUser) {
+            throw new IngestionException("This document has " + newChunks + " sections, which would exceed your storage "
+                    + "limit (" + used + " of " + maxChunksPerUser + " used). Delete documents to free space.");
+        }
     }
 
     private void deleteTempSourceFile(Document document) {

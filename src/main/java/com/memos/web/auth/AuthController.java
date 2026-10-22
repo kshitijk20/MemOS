@@ -2,6 +2,7 @@ package com.memos.web.auth;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,8 +29,15 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<UserSummaryResponse> register(@Valid @RequestBody RegisterRequest request) {
-        User user = authApplicationService.register(new RegisterCommand(request.email(), request.password(), request.fullName()));
+        User user = authApplicationService.register(
+                new RegisterCommand(request.email(), request.password(), request.fullName(), request.inviteCode()));
         return ResponseEntity.status(HttpStatus.CREATED).body(UserSummaryResponse.from(user));
+    }
+
+    /** Public: lets the sign-up page show an invite-code field, or a "registration closed" notice. */
+    @GetMapping("/registration")
+    public ResponseEntity<AuthApplicationService.RegistrationPolicy> registration() {
+        return ResponseEntity.ok(authApplicationService.registrationPolicy());
     }
 
     @PostMapping("/login")

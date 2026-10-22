@@ -63,8 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userFromTokens(tokens))
   }
 
-  async function register(email: string, password: string, fullName: string) {
-    await authApi.register({ email, password, fullName })
+  async function register(email: string, password: string, fullName: string, inviteCode?: string) {
+    await authApi.register({ email, password, fullName, inviteCode })
     const tokens = await authApi.login({ email, password })
     setAccessToken(tokens.accessToken)
     setRefreshToken(tokens.refreshToken)

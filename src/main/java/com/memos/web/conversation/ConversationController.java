@@ -26,6 +26,7 @@ import org.springframework.security.concurrent.DelegatingSecurityContextRunnable
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.memos.application.conversation.ConversationApplicationService;
+import com.memos.application.limits.UsageLimitService;
 import com.memos.application.rag.RagQueryService;
 import com.memos.domain.common.PageRequest;
 import com.memos.domain.common.PageResult;
@@ -50,6 +51,7 @@ public class ConversationController {
 
     private final ConversationApplicationService conversationApplicationService;
     private final RagQueryService ragQueryService;
+    private final UsageLimitService usageLimitService;
     private final ObjectMapper objectMapper;
 
     @PostMapping
@@ -134,6 +136,7 @@ public class ConversationController {
             @PathVariable UUID id,
             @Valid @RequestBody CreateMessageRequest request) {
 
+        usageLimitService.checkQuestion(principal.getId());
         Message assistantMessage = ragQueryService.askQuestion(principal.getId(), id, request.content());
         return ResponseEntity.status(HttpStatus.CREATED).body(MessageResponse.from(assistantMessage));
     }
@@ -144,6 +147,8 @@ public class ConversationController {
             @PathVariable UUID id,
             @Valid @RequestBody CreateMessageRequest request) {
 
+        // Checked before the stream opens, so an over-limit request gets a plain 429 response.
+        usageLimitService.checkQuestion(principal.getId());
         SseEmitter emitter = new SseEmitter(120_000L);
         UUID userId = principal.getId();
         String content = request.content();

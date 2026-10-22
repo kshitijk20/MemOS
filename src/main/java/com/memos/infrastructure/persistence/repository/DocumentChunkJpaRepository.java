@@ -28,6 +28,9 @@ public interface DocumentChunkJpaRepository extends JpaRepository<DocumentChunkE
 
     long countByDocumentId(UUID documentId);
 
+    @Query("SELECT count(c) FROM DocumentChunkEntity c, DocumentEntity d WHERE d.id = c.documentId AND d.ownerId = :ownerId")
+    long countByOwnerId(@Param("ownerId") UUID ownerId);
+
     /**
      * Vector similarity search restricted to documents owned by {@code ownerId}, ordered by
      * cosine distance ascending (most similar first). {@code queryVector} must be a pgvector

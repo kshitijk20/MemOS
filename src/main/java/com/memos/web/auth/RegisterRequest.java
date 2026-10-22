@@ -13,5 +13,9 @@ public record RegisterRequest(
         String password,
 
         @NotBlank @Size(max = 150)
-        String fullName) {
+        String fullName,
+
+        /** Required only when the server is configured with an invite code. */
+        @Size(max = 200)
+        String inviteCode) {
 }

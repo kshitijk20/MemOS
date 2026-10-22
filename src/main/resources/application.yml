@@ -32,6 +32,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # Fail fast if Redis is down: rate limits then allow requests instead of hanging them.
+      timeout: 2s
 
   cache:
     type: redis
@@ -73,6 +75,20 @@ memos:
     access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:3600000}    # 1 hour
     refresh-token-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000} # 7 days
     issuer: memos-backend
+
+  # Who can sign up. With an invite code set, only people you give it to can register.
+  auth:
+    registration-enabled: ${MEMOS_REGISTRATION_ENABLED:true}
+    invite-code: ${MEMOS_INVITE_CODE:}
+
+  # Per-user limits so one account can't use up the shared AI quota or the server's storage.
+  # 0 disables a limit.
+  limits:
+    questions-per-minute: ${MEMOS_LIMIT_QUESTIONS_PER_MINUTE:5}
+    questions-per-day: ${MEMOS_LIMIT_QUESTIONS_PER_DAY:200}
+    ingestions-per-hour: ${MEMOS_LIMIT_INGESTIONS_PER_HOUR:20}
+    max-documents-per-user: ${MEMOS_LIMIT_MAX_DOCUMENTS:100}
+    max-chunks-per-user: ${MEMOS_LIMIT_MAX_CHUNKS:20000}
 
   ai:
     default-provider: ${MEMOS_DEFAULT_AI_PROVIDER:GEMINI}

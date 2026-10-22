@@ -76,4 +76,10 @@ public class DocumentChunkRepositoryAdapter implements DocumentChunkRepositoryPo
     public long countByDocumentId(UUID documentId) {
         return jpaRepository.countByDocumentId(documentId);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countByOwnerId(UUID ownerId) {
+        return jpaRepository.countByOwnerId(ownerId);
+    }
 }

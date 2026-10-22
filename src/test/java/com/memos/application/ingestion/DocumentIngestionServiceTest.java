@@ -25,7 +25,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.memos.application.limits.UsageLimitService;
 import com.memos.domain.ai.EmbeddingPort;
 import com.memos.domain.document.Document;
 import com.memos.domain.document.DocumentChunk;
@@ -35,6 +37,7 @@ import com.memos.domain.document.DocumentSourceType;
 import com.memos.domain.document.DocumentStatus;
 import com.memos.domain.exception.DuplicateResourceException;
 import com.memos.domain.exception.IngestionException;
+import com.memos.domain.exception.RateLimitExceededException;
 import com.memos.infrastructure.ingestion.parser.DocumentParserRegistry;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,6 +64,9 @@ class DocumentIngestionServiceTest {
     @Mock
     private IngestionProgressStore progressStore;
 
+    @Mock
+    private UsageLimitService usageLimitService;
+
     @TempDir
     Path tempDir;
 
@@ -70,7 +76,7 @@ class DocumentIngestionServiceTest {
     void setUp() {
         ingestionService = new DocumentIngestionService(
                 documentRepositoryPort, documentChunkRepositoryPort, parserRegistry, chunkingPort, embeddingPort,
-                progressStore);
+                progressStore, usageLimitService);
     }
 
     private Document pendingDocument(UUID id) throws IOException {
@@ -223,8 +229,11 @@ class DocumentIngestionServiceTest {
         when(documentRepositoryPort.findByOwnerIdAndSourceFingerprint(any(), any())).thenReturn(Optional.empty());
         when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ingestionService.replaceFileSource(failed, replacement.toString(), "new-fingerprint", Map.of());
+        Document result = ingestionService.replaceFileSource(failed, replacement.toString(), "new-fingerprint", Map.of());
 
+        assertThat(result.getStatus()).isEqualTo(DocumentStatus.PENDING);
+        assertThat(result.getVersion()).isEqualTo(2);
+        verify(usageLimitService).checkIngestion(failed.getOwnerId());
         assertThat(Path.of(failed.getSourceUri())).doesNotExist();
         assertThat(replacement).exists();
     }
@@ -299,5 +308,78 @@ class DocumentIngestionServiceTest {
         assertThat(result.getStatus()).isEqualTo(DocumentStatus.PENDING);
         assertThat(result.getVersion()).isEqualTo(2);
         verify(documentRepositoryPort).save(any(Document.class));
+    }
+
+    @Test
+    void submitRejectsUsersAtTheDocumentLimit() {
+        UUID ownerId = UUID.randomUUID();
+        when(documentRepositoryPort.countByOwnerId(ownerId)).thenReturn(100L);
+
+        assertThatThrownBy(() -> ingestionService.submit(
+                ownerId, "One too many", DocumentSourceType.WEB_PAGE, "https://example.com", null, Map.of()))
+                .isInstanceOf(IngestionException.class)
+                .hasMessageContaining("limit of 100 documents");
+        verify(documentRepositoryPort, never()).save(any());
+    }
+
+    @Test
+    void submitIsRateLimited() {
+        UUID ownerId = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new RateLimitExceededException("slow down", 60))
+                .when(usageLimitService).checkIngestion(ownerId);
+
+        assertThatThrownBy(() -> ingestionService.submit(
+                ownerId, "Doc", DocumentSourceType.WEB_PAGE, "https://example.com", null, Map.of()))
+                .isInstanceOf(RateLimitExceededException.class);
+        verify(documentRepositoryPort, never()).save(any());
+    }
+
+    @Test
+    void ingestFailsBeforeEmbeddingWhenOverTheStorageLimit() throws IOException {
+        UUID documentId = UUID.randomUUID();
+        Document document = pendingDocument(documentId);
+        ReflectionTestUtils.setField(ingestionService, "maxChunksPerUser", 3);
+
+        when(documentRepositoryPort.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(parserRegistry.resolve(DocumentSourceType.MARKDOWN)).thenReturn(parserPort);
+        when(parserPort.parse(any(Document.class))).thenReturn(List.of(new ParsedDocument("Sample doc", "content", Map.of())));
+        when(chunkingPort.chunk("content")).thenReturn(List.of(
+                new TextChunk("a", 1, Map.of()), new TextChunk("b", 1, Map.of())));
+        when(documentChunkRepositoryPort.countByOwnerId(document.getOwnerId())).thenReturn(2L);
+        when(documentChunkRepositoryPort.countByDocumentId(documentId)).thenReturn(0L);
+
+        ingestionService.ingest(documentId);
+
+        verify(embeddingPort, never()).embedBatch(anyList());
+        ArgumentCaptor<Document> captor = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepositoryPort, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
+        Document finalState = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertThat(finalState.getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(finalState.getErrorMessage()).contains("storage limit").contains("2 of 3 used");
+    }
+
+    @Test
+    void reingestDoesNotCountTheDocumentsOwnChunksAgainstTheLimit() throws IOException {
+        UUID documentId = UUID.randomUUID();
+        Document document = pendingDocument(documentId);
+        ReflectionTestUtils.setField(ingestionService, "maxChunksPerUser", 3);
+
+        when(documentRepositoryPort.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(parserRegistry.resolve(DocumentSourceType.MARKDOWN)).thenReturn(parserPort);
+        when(parserPort.parse(any(Document.class))).thenReturn(List.of(new ParsedDocument("Sample doc", "content", Map.of())));
+        when(chunkingPort.chunk("content")).thenReturn(List.of(
+                new TextChunk("a", 1, Map.of()), new TextChunk("b", 1, Map.of()), new TextChunk("c", 1, Map.of())));
+        // 3 stored chunks, all belonging to this document, which is about to replace them.
+        when(documentChunkRepositoryPort.countByOwnerId(document.getOwnerId())).thenReturn(3L);
+        when(documentChunkRepositoryPort.countByDocumentId(documentId)).thenReturn(3L);
+        when(embeddingPort.embedBatch(anyList())).thenReturn(List.of(new float[] {1f}, new float[] {2f}, new float[] {3f}));
+        when(documentChunkRepositoryPort.replaceForDocument(any(UUID.class), anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        ingestionService.ingest(documentId);
+
+        verify(documentChunkRepositoryPort).replaceForDocument(eq(documentId), anyList());
     }
 }

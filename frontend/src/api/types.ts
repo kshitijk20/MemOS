@@ -22,6 +22,14 @@ export interface RegisterRequest {
   email: string
   password: string
   fullName: string
+  /** Only checked when the server requires an invite code. */
+  inviteCode?: string
+}
+
+/** How sign-up works on this server. */
+export interface RegistrationPolicy {
+  open: boolean
+  inviteCodeRequired: boolean
 }
 
 export interface UserResponse {

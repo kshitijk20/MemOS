@@ -26,6 +26,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -45,6 +46,8 @@ import com.memos.infrastructure.security.CustomUserPrincipal;
 import com.memos.infrastructure.security.JwtService;
 import com.memos.infrastructure.security.UserDetailsServiceImpl;
 
+// Uploads go under target/ so the tests (which mock ingestion, so nothing deletes them) don't litter the OS temp dir.
+@TestPropertySource(properties = "memos.ingestion.upload-dir=target/test-uploads")
 @WebMvcTest(value = DocumentController.class,
         excludeAutoConfiguration = org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration.class)
 class DocumentControllerTest {
