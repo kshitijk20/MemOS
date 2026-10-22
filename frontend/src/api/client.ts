@@ -30,8 +30,14 @@ export function setAuthFailureHandler(handler: () => void): void {
   authFailureHandler = handler
 }
 
+/**
+ * Backend origin. Empty in production builds, where the app and the API share one domain behind
+ * a reverse proxy, so requests go to relative /api/... paths.
+ */
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? ''
+
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: API_BASE_URL,
 })
 
 apiClient.interceptors.request.use((config) => {
@@ -53,7 +59,7 @@ async function refreshTokens(): Promise<AuthResponse> {
     throw new Error('No refresh token available')
   }
   const response = await axios.post<AuthResponse>(
-    `${import.meta.env.VITE_API_BASE_URL}/api/v1/auth/refresh`,
+    `${API_BASE_URL}/api/v1/auth/refresh`,
     { refreshToken },
   )
   return response.data

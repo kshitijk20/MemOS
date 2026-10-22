@@ -9,3 +9,7 @@ target/
 HELP.md
 /repos-cache/
 .claude/
+
+# Production secrets and local database dumps (docker-compose.prod.yml)
+.env.prod
+backups/

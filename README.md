@@ -124,6 +124,18 @@ docker compose up --build
 This builds the app image (multi-stage Dockerfile: Maven build → `eclipse-temurin:21-jre`
 runtime) and starts Postgres, Redis, and the app together.
 
+## Deploying to Production
+
+`docker-compose.prod.yml` runs the full stack on one server: Postgres + pgvector, Redis, the
+backend, the frontend (nginx) and Caddy, which serves everything on one domain with automatic
+HTTPS, plus nightly database backups. Copy `.env.prod.example` to `.env.prod`, fill it in, and run:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+Step-by-step guide for a free Oracle Cloud ARM server: [docs/deploy-oracle.md](docs/deploy-oracle.md).
+
 ## API Overview
 
 All endpoints are under `/api/v1` and require a `Bearer <accessToken>` JWT except the

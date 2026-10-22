@@ -1,4 +1,4 @@
-import { apiClient, getAccessToken } from './client'
+import { API_BASE_URL, apiClient, getAccessToken } from './client'
 import type {
   ConversationResponse,
   ConversationScope,
@@ -82,8 +82,7 @@ export async function streamMessage(
   content: string,
   onToken: (token: string) => void,
 ): Promise<Extract<StreamEvent, { type: 'done' }>> {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL
-  const response = await fetch(`${baseUrl}/api/v1/conversations/${conversationId}/messages/stream`, {
+  const response = await fetch(`${API_BASE_URL}/api/v1/conversations/${conversationId}/messages/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

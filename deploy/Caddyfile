@@ -1,0 +1,25 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# API (including the streaming chat endpoint; Caddy flushes event streams immediately).
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+
+	handle /actuator/health {
+		reverse_proxy backend:8080
+	}
+
+	# Everything else is the React app.
+	handle {
+		reverse_proxy frontend:80
+	}
+}

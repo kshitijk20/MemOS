@@ -14,8 +14,12 @@ WORKDIR /app
 
 RUN addgroup -S memos && adduser -S memos -G memos
 COPY --from=build /build/target/memos-backend.jar /app/memos-backend.jar
-RUN chown memos:memos /app/memos-backend.jar
+# Pending uploads live here (see memos.ingestion.upload-dir). A named volume mounted on it
+# starts with this ownership, so the non-root user can write to it.
+RUN mkdir -p /app/uploads && chown memos:memos /app/memos-backend.jar /app/uploads
 USER memos
 
+ENV MEMOS_UPLOAD_DIR=/app/uploads
 EXPOSE 8080
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-jar", "/app/memos-backend.jar"]
+# Size the heap from the container's memory limit instead of the host's.
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "/app/memos-backend.jar"]

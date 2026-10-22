@@ -1,0 +1,11 @@
+# Backend image only needs pom.xml and src/; keep secrets and build output out of the context.
+.env
+.env.*
+!.env.example
+target/
+frontend/
+.git/
+.idea/
+.vscode/
+*.log
+plan.txt

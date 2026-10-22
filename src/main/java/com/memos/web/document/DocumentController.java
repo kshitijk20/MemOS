@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -55,6 +56,10 @@ public class DocumentController {
     private final DocumentRepositoryPort documentRepositoryPort;
     private final DocumentChunkRepositoryPort documentChunkRepositoryPort;
     private final IngestionProgressStore progressStore;
+
+    /** Uploads wait here until ingestion succeeds; mount a volume in production so Retry survives restarts. */
+    @Value("${memos.ingestion.upload-dir:${java.io.tmpdir}}")
+    private String uploadDir;
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ResponseEntity<DocumentResponse> upload(
@@ -282,7 +287,8 @@ public class DocumentController {
         String suffix = sourceType == DocumentSourceType.PDF ? ".pdf" : ".md";
         try {
             byte[] bytes = file.getBytes();
-            Path tempFile = Files.createTempFile("memos-upload-", suffix);
+            Path directory = Files.createDirectories(Path.of(uploadDir));
+            Path tempFile = Files.createTempFile(directory, "memos-upload-", suffix);
             Files.write(tempFile, bytes);
             return new StoredUpload(tempFile, SourceFingerprint.forFile(bytes));
         } catch (IOException | UncheckedIOException e) {
