@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Eye, EyeOff, ExternalLink, HelpCircle, Lock, Mail, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfileQuery, useUpdateProfileMutation } from '@/hooks/useProfile'
 import { cn } from '@/lib/utils'
+import type { UserProfileResponse } from '@/api/types'
 
 function SectionIcon({
   children,
@@ -117,23 +118,34 @@ function PasswordField({
 
 export function SettingsPage() {
   const { data: profile, isLoading } = useProfileQuery()
+
+  if (isLoading || !profile) {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <div>
+          <Skeleton className="h-8 w-36" />
+          <Skeleton className="mt-2 h-4 w-72" />
+        </div>
+        <Skeleton className="h-56 w-full" />
+        <Skeleton className="h-56 w-full" />
+      </div>
+    )
+  }
+
+  // Keyed by the saved values so the form starts over from the profile after an update.
+  return <SettingsForm key={`${profile.fullName}|${profile.email}`} profile={profile} />
+}
+
+function SettingsForm({ profile }: { profile: UserProfileResponse }) {
   const updateMutation = useUpdateProfileMutation()
 
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const [fullName, setFullName] = useState(profile.fullName)
+  const [email, setEmail] = useState(profile.email)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (profile) {
-      setFullName(profile.fullName)
-      setEmail(profile.email)
-    }
-  }, [profile])
-
   const profileDirty =
-    profile != null &&
     (fullName.trim() !== profile.fullName || email.trim().toLowerCase() !== profile.email.toLowerCase())
 
   const canResetPassword = newPassword.length > 0 && confirmPassword.length > 0
@@ -174,19 +186,6 @@ export function SettingsPage() {
     } catch {
       // toast is shown by the mutation
     }
-  }
-
-  if (isLoading || !profile) {
-    return (
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-        <div>
-          <Skeleton className="h-8 w-36" />
-          <Skeleton className="mt-2 h-4 w-72" />
-        </div>
-        <Skeleton className="h-56 w-full" />
-        <Skeleton className="h-56 w-full" />
-      </div>
-    )
   }
 
   return (
