@@ -90,7 +90,7 @@ cp .env.example .env
 Edit `.env` and set at minimum:
 
 - `GEMINI_API_KEY` — your free key from Google AI Studio
-- `JWT_SECRET` — generate with `openssl rand -base64 64`
+- `JWT_SECRET` — **required**; the app refuses to start without it (or with a sample or short value). Generate with `openssl rand -base64 64`
 
 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are optional; only required if you set
 `MEMOS_DEFAULT_AI_PROVIDER` (or a per-conversation `provider`) to `OPENAI` or `CLAUDE`, and you

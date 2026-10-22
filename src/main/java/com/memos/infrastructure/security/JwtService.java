@@ -29,6 +29,9 @@ import io.jsonwebtoken.security.Keys;
 @Component
 public class JwtService {
 
+    /** HS256 needs at least 256 bits of key material. */
+    static final int MIN_SECRET_BYTES = 32;
+
     private static final String CLAIM_USER_ID = "userId";
     private static final String CLAIM_ROLE = "role";
 
@@ -43,10 +46,31 @@ public class JwtService {
             @Value("${memos.jwt.issuer}") String issuer,
             @Value("${memos.jwt.access-token-expiration-ms}") long accessTokenExpirationMs,
             @Value("${memos.jwt.refresh-token-expiration-ms}") long refreshTokenExpirationMs) {
-        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.signingKey = Keys.hmacShaKeyFor(validatedSecret(secret).getBytes(StandardCharsets.UTF_8));
         this.issuer = issuer;
         this.accessTokenExpirationMs = accessTokenExpirationMs;
         this.refreshTokenExpirationMs = refreshTokenExpirationMs;
+    }
+
+    /**
+     * Anyone who knows the signing secret can mint valid tokens for any user, so start-up fails
+     * rather than run with a missing, sample or short one.
+     */
+    static String validatedSecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT_SECRET is not set. Generate one with `openssl rand -base64 64` and set it in the environment.");
+        }
+        String lower = secret.toLowerCase();
+        if (lower.contains("change-this") || lower.contains("changeme") || lower.contains("your-secret")) {
+            throw new IllegalStateException(
+                    "JWT_SECRET is still the sample value. Generate one with `openssl rand -base64 64`.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "JWT_SECRET must be at least " + MIN_SECRET_BYTES + " bytes. Generate one with `openssl rand -base64 64`.");
+        }
+        return secret;
     }
 
     public String generateAccessToken(User user) {
