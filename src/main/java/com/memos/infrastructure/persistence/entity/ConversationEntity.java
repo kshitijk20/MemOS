@@ -56,6 +56,9 @@ public class ConversationEntity {
     @Builder.Default
     private List<UUID> documentScope = new ArrayList<>();
 
+    @Column(name = "collection_id")
+    private UUID collectionId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

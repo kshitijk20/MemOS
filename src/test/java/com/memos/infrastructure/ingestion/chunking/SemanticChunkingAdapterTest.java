@@ -62,4 +62,31 @@ class SemanticChunkingAdapterTest {
             assertThat(chunk.tokenCount()).isLessThanOrEqualTo(5);
         }
     }
+
+    @Test
+    void recordsPageRangesWhenContentHasPageBreaks() {
+        SemanticChunkingAdapter adapter = new SemanticChunkingAdapter(20, 0);
+        String br = "\n\n" + com.memos.application.ingestion.ChunkingPort.PAGE_BREAK + "\n\n";
+        String content = "Page one intro text." + br
+                + "Page two has a fairly long paragraph that fills a chunk on its own." + br
+                + "Page three.";
+
+        var chunks = adapter.chunk(content);
+
+        assertThat(chunks).isNotEmpty();
+        assertThat(chunks).allSatisfy(chunk -> assertThat(chunk.content())
+                .doesNotContain(com.memos.application.ingestion.ChunkingPort.PAGE_BREAK));
+        assertThat(chunks.get(0).metadata()).containsEntry("pageStart", 1);
+        var last = chunks.get(chunks.size() - 1);
+        assertThat(last.metadata()).containsEntry("pageEnd", 3);
+    }
+
+    @Test
+    void omitsPageMetadataForUnpagedContent() {
+        SemanticChunkingAdapter adapter = new SemanticChunkingAdapter(500, 50);
+
+        var chunks = adapter.chunk("Just a markdown paragraph.");
+
+        assertThat(chunks.get(0).metadata()).doesNotContainKeys("pageStart", "pageEnd");
+    }
 }

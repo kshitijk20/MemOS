@@ -5,5 +5,7 @@ public record StatsResponse(
         long readyDocuments,
         long processingDocuments,
         long failedDocuments,
-        long totalConversations
+        long totalConversations,
+        long helpfulAnswers,
+        long unhelpfulAnswers
 ) {}

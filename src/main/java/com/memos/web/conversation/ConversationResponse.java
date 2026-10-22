@@ -13,6 +13,7 @@ public record ConversationResponse(
         AiProvider provider,
         String model,
         List<UUID> documentScope,
+        UUID collectionId,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -23,6 +24,7 @@ public record ConversationResponse(
                 conversation.getProvider(),
                 conversation.getModel(),
                 conversation.getDocumentScope() != null ? conversation.getDocumentScope() : List.of(),
+                conversation.getCollectionId(),
                 conversation.getCreatedAt(),
                 conversation.getUpdatedAt());
     }

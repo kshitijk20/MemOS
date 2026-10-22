@@ -1,7 +1,10 @@
 import { apiClient, getAccessToken } from './client'
 import type {
   ConversationResponse,
+  ConversationScope,
   CreateConversationRequest,
+  FeedbackEntryResponse,
+  MessageFeedback,
   MessageResponse,
   PageResponse,
   SendMessageRequest,
@@ -25,12 +28,35 @@ export async function getConversation(id: string): Promise<ConversationResponse>
   return response.data
 }
 
-export async function updateConversationScope(
-  id: string,
-  documentIds: string[],
-): Promise<ConversationResponse> {
+export async function updateConversationScope(id: string, scope: ConversationScope): Promise<ConversationResponse> {
   const response = await apiClient.patch<ConversationResponse>(`/api/v1/conversations/${id}/scope`, {
-    documentIds,
+    documentIds: scope.kind === 'documents' ? scope.documentIds : [],
+    collectionId: scope.kind === 'collection' ? scope.collectionId : null,
+  })
+  return response.data
+}
+
+/** {@code feedback} null clears the rating. */
+export async function setMessageFeedback(
+  conversationId: string,
+  messageId: string,
+  feedback: MessageFeedback | null,
+  comment?: string,
+): Promise<MessageResponse> {
+  const response = await apiClient.put<MessageResponse>(
+    `/api/v1/conversations/${conversationId}/messages/${messageId}/feedback`,
+    { feedback, comment: comment ?? null },
+  )
+  return response.data
+}
+
+export async function listFeedback(
+  rating: MessageFeedback | null,
+  page: number,
+  size: number,
+): Promise<PageResponse<FeedbackEntryResponse>> {
+  const response = await apiClient.get<PageResponse<FeedbackEntryResponse>>('/api/v1/feedback', {
+    params: { rating: rating ?? undefined, page, size },
   })
   return response.data
 }

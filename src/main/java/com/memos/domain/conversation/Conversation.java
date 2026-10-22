@@ -21,6 +21,9 @@ public class Conversation {
     private final AiProvider provider;
     private final String model;
     private final List<UUID> documentScope;
+
+    /** When set, questions search only this collection's documents; documentScope is then empty. */
+    private final UUID collectionId;
     private final Instant createdAt;
     private final Instant updatedAt;
 

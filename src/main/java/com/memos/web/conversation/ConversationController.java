@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -54,7 +55,8 @@ public class ConversationController {
             @Valid @RequestBody CreateConversationRequest request) {
 
         Conversation conversation = conversationApplicationService.create(
-                principal.getId(), request.title(), request.provider(), request.model(), request.documentIds());
+                principal.getId(), request.title(), request.provider(), request.model(), request.documentIds(),
+                request.collectionId());
         return ResponseEntity.status(HttpStatus.CREATED).body(ConversationResponse.from(conversation));
     }
 
@@ -83,8 +85,11 @@ public class ConversationController {
             @PathVariable UUID id,
             @RequestBody UpdateDocumentScopeRequest request) {
 
-        Conversation conversation = conversationApplicationService.updateDocumentScope(
-                principal.getId(), id, request == null ? List.of() : request.documentIds());
+        Conversation conversation = conversationApplicationService.updateScope(
+                principal.getId(),
+                id,
+                request == null ? List.of() : request.documentIds(),
+                request == null ? null : request.collectionId());
         return ResponseEntity.ok(ConversationResponse.from(conversation));
     }
 
@@ -106,6 +111,18 @@ public class ConversationController {
 
         PageResult<Message> result = conversationApplicationService.listMessages(principal.getId(), id, PageRequest.of(page, size));
         return ResponseEntity.ok(PageResponse.of(result, MessageResponse::from));
+    }
+
+    @PutMapping("/{id}/messages/{messageId}/feedback")
+    public ResponseEntity<MessageResponse> setFeedback(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID messageId,
+            @Valid @RequestBody MessageFeedbackRequest request) {
+
+        Message message = conversationApplicationService.setFeedback(
+                principal.getId(), id, messageId, request.feedback(), request.comment());
+        return ResponseEntity.ok(MessageResponse.from(message));
     }
 
     @PostMapping("/{id}/messages")

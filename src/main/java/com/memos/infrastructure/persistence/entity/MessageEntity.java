@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.memos.domain.conversation.MessageFeedback;
 import com.memos.domain.conversation.MessageRole;
 
 import jakarta.persistence.CascadeType;
@@ -50,6 +51,22 @@ public class MessageEntity {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(nullable = false)
+    private boolean unanswered;
+
+    @Column(name = "search_query", columnDefinition = "text")
+    private String searchQuery;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private MessageFeedback feedback;
+
+    @Column(name = "feedback_comment", columnDefinition = "text")
+    private String feedbackComment;
+
+    @Column(name = "feedback_at")
+    private Instant feedbackAt;
 
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, RotateCcw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -8,7 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MessageBubble } from '@/components/MessageBubble'
 import { ChatInput } from '@/components/ChatInput'
 import { ConversationScopeControl } from '@/components/ConversationScopeControl'
-import { useConversationQuery, useMessagesQuery } from '@/hooks/useConversations'
+import { useConversationQuery, useMessagesQuery, useUpdateConversationScopeMutation } from '@/hooks/useConversations'
+import { scopeOf } from '@/lib/scope'
 import { streamMessage } from '@/api/conversations'
 import { extractErrorMessage } from '@/api/client'
 
@@ -19,20 +20,51 @@ export function ConversationDetailPage() {
   const queryClient = useQueryClient()
   const { data: conversation, isLoading: isConversationLoading } = useConversationQuery(conversationId)
   const { data: messagesPage, isLoading: isMessagesLoading } = useMessagesQuery(conversationId)
+  const updateScope = useUpdateConversationScopeMutation(conversationId)
+  const isScoped = !!conversation && scopeOf(conversation).kind !== 'all'
 
   const [pendingContent, setPendingContent] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  /** Follow new content only while the reader is at (or near) the bottom of the chat. */
+  const stickToBottomRef = useRef(true)
   const tokenBufferRef = useRef('')
   const rafRef = useRef<number | null>(null)
+  const messageCount = messagesPage?.items.length ?? 0
 
+  function scrollToBottom(behavior: ScrollBehavior) {
+    const container = scrollContainerRef.current
+    // Scroll only the message list; scrollIntoView would also scroll the page around it.
+    container?.scrollTo({ top: container.scrollHeight, behavior })
+  }
+
+  function handleScroll() {
+    const container = scrollContainerRef.current
+    if (!container) return
+    stickToBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+  }
+
+  // Opening a conversation starts at the latest message, without animating through the history.
+  useLayoutEffect(() => {
+    if (!isMessagesLoading) {
+      stickToBottomRef.current = true
+      scrollToBottom('auto')
+    }
+  }, [conversationId, isMessagesLoading])
+
+  // New messages and streamed tokens. Deliberately not keyed on the message data itself, so
+  // rating an answer or other in-place updates don't yank the view to the bottom.
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messagesPage, pendingContent, streamingContent])
+    if (stickToBottomRef.current) {
+      scrollToBottom(isStreaming ? 'auto' : 'smooth')
+    }
+  }, [messageCount, pendingContent, streamingContent, isStreaming])
 
   async function handleSend(content: string) {
+    // Sending is an explicit "take me to the conversation's end".
+    stickToBottomRef.current = true
     setError(null)
     setPendingContent(content)
     setStreamingContent('')
@@ -104,7 +136,11 @@ export function ConversationDetailPage() {
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto rounded-lg border p-4">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain rounded-lg border p-4"
+      >
         {isMessagesLoading ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -124,6 +160,17 @@ export function ConversationDetailPage() {
                 content={message.content}
                 citations={message.citations}
                 createdAt={message.createdAt}
+                conversationId={conversationId}
+                messageId={message.id}
+                unanswered={message.unanswered}
+                searchQuery={message.searchQuery}
+                feedback={message.feedback}
+                feedbackComment={message.feedbackComment}
+                onWidenScope={
+                  message.unanswered && isScoped && !updateScope.isPending
+                    ? () => updateScope.mutate({ kind: 'all' })
+                    : undefined
+                }
               />
             ))}
             {pendingContent && (
@@ -136,7 +183,6 @@ export function ConversationDetailPage() {
             )}
           </>
         )}
-        <div ref={scrollRef} />
       </div>
 
       {error && (

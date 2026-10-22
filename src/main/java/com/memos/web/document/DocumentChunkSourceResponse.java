@@ -18,9 +18,17 @@ public record DocumentChunkSourceResponse(
         Instant createdAt,
         String documentTitle,
         String sourceUri,
-        DocumentSourceType sourceType) {
+        DocumentSourceType sourceType,
+        /** Text of the chunks just before and after, for showing the cited passage in context. */
+        String previousContent,
+        String nextContent) {
 
     public static DocumentChunkSourceResponse from(DocumentChunk chunk, Document document) {
+        return from(chunk, document, null, null);
+    }
+
+    public static DocumentChunkSourceResponse from(
+            DocumentChunk chunk, Document document, DocumentChunk previous, DocumentChunk next) {
         return new DocumentChunkSourceResponse(
                 chunk.getId(),
                 chunk.getDocumentId(),
@@ -31,6 +39,8 @@ public record DocumentChunkSourceResponse(
                 chunk.getCreatedAt(),
                 document.getTitle(),
                 document.getSourceUri(),
-                document.getSourceType());
+                document.getSourceType(),
+                previous == null ? null : previous.getContent(),
+                next == null ? null : next.getContent());
     }
 }

@@ -85,6 +85,8 @@ export interface DocumentChunkSourceResponse {
   documentTitle: string
   sourceUri: string
   sourceType: DocumentSourceType
+  previousContent: string | null
+  nextContent: string | null
 }
 
 export interface UserProfileResponse {
@@ -122,6 +124,7 @@ export interface ConversationResponse {
   provider: AiProvider
   model: string
   documentScope: string[]
+  collectionId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -131,7 +134,14 @@ export interface CreateConversationRequest {
   provider?: AiProvider
   model?: string
   documentIds?: string[]
+  collectionId?: string
 }
+
+/** What a chat searches: everything, one collection, or specific documents. */
+export type ConversationScope =
+  | { kind: 'all' }
+  | { kind: 'collection'; collectionId: string }
+  | { kind: 'documents'; documentIds: string[] }
 
 export type MessageRole = 'USER' | 'ASSISTANT' | 'SYSTEM'
 
@@ -141,7 +151,11 @@ export interface Citation {
   sourceTitle: string
   snippet: string
   score: number
+  /** The [n] the answer uses for this source; null on answers from before numbering was stored. */
+  sourceNumber: number | null
 }
+
+export type MessageFeedback = 'UP' | 'DOWN'
 
 export interface MessageResponse {
   id: string
@@ -149,6 +163,33 @@ export interface MessageResponse {
   content: string
   citations: Citation[]
   createdAt: string
+  /** The assistant could not answer from the documents. */
+  unanswered: boolean
+  /** Standalone query searched when a follow-up question was rewritten. */
+  searchQuery: string | null
+  feedback: MessageFeedback | null
+  feedbackComment: string | null
+}
+
+export interface FeedbackEntryResponse {
+  messageId: string
+  conversationId: string
+  conversationTitle: string
+  question: string | null
+  answer: string
+  feedback: MessageFeedback
+  comment: string | null
+  feedbackAt: string
+}
+
+// --- Collections ---
+
+export interface CollectionResponse {
+  id: string
+  name: string
+  documentIds: string[]
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SendMessageRequest {

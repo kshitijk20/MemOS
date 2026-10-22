@@ -9,7 +9,8 @@ public record CitationResponse(
         UUID documentChunkId,
         String sourceTitle,
         String snippet,
-        double score) {
+        double score,
+        Integer sourceNumber) {
 
     public static CitationResponse from(Citation citation) {
         return new CitationResponse(
@@ -17,6 +18,7 @@ public record CitationResponse(
                 citation.getDocumentChunkId(),
                 citation.getSourceTitle(),
                 citation.getSnippet(),
-                citation.getScore());
+                citation.getScore(),
+                citation.getSourceNumber());
     }
 }

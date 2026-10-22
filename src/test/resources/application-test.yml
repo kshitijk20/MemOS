@@ -44,6 +44,8 @@ memos:
     candidate-pool: 20
     min-score: 0.35
     rrf-k: 60
+    query-rewrite:
+      enabled: true
 
   ingestion:
     chunk-size-tokens: 500

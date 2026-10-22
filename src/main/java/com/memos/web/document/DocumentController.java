@@ -168,7 +168,11 @@ public class DocumentController {
                 .orElseThrow(() -> new ResourceNotFoundException("Document", id));
         var chunk = documentChunkRepositoryPort.findByIdAndDocumentId(chunkId, id)
                 .orElseThrow(() -> new ResourceNotFoundException("DocumentChunk", chunkId));
-        return ResponseEntity.ok(DocumentChunkSourceResponse.from(chunk, document));
+        var previous = chunk.getChunkIndex() > 0
+                ? documentChunkRepositoryPort.findByDocumentIdAndChunkIndex(id, chunk.getChunkIndex() - 1).orElse(null)
+                : null;
+        var next = documentChunkRepositoryPort.findByDocumentIdAndChunkIndex(id, chunk.getChunkIndex() + 1).orElse(null);
+        return ResponseEntity.ok(DocumentChunkSourceResponse.from(chunk, document, previous, next));
     }
 
     @GetMapping("/{id}/progress")

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
+import { Folder, FolderPlus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -29,9 +29,12 @@ import {
   useRetryDocumentMutation,
 } from '@/hooks/useDocuments'
 import { explainIngestionError } from '@/lib/ingestion-error'
-import type { DocumentResponse, DocumentSourceType } from '@/api/types'
+import { useCollectionsQuery } from '@/hooks/useCollections'
+import type { CollectionResponse, DocumentResponse, DocumentSourceType } from '@/api/types'
 
 const PAGE_SIZE = 10
+/** Collections are filtered client-side, so load enough documents to cover them in one page. */
+const COLLECTION_FILTER_SIZE = 200
 
 const SOURCE_TYPE_LABELS: Record<DocumentSourceType, string> = {
   PDF: 'PDF',
@@ -86,12 +89,32 @@ function IngestionProgressCell({ documentId }: { documentId: string }) {
   )
 }
 
-export function DocumentsTable() {
+interface DocumentsTableProps {
+  /** When set, only this collection's documents are shown. */
+  collection?: CollectionResponse | null
+  onManageCollections?: (document: DocumentResponse) => void
+}
+
+export function DocumentsTable({ collection, onManageCollections }: DocumentsTableProps) {
   const [page, setPage] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<DocumentResponse | null>(null)
   const [reingestTarget, setReingestTarget] = useState<DocumentResponse | null>(null)
   const [errorTarget, setErrorTarget] = useState<DocumentResponse | null>(null)
-  const { data, isLoading } = useDocumentsQuery(page, PAGE_SIZE)
+  const filtering = !!collection
+  const { data: pageData, isLoading } = useDocumentsQuery(
+    filtering ? 0 : page,
+    filtering ? COLLECTION_FILTER_SIZE : PAGE_SIZE,
+  )
+  const { data: collections = [] } = useCollectionsQuery()
+  const data =
+    pageData && collection
+      ? {
+          ...pageData,
+          items: pageData.items.filter((doc) => collection.documentIds.includes(doc.id)),
+          totalPages: 1,
+          page: 0,
+        }
+      : pageData
   const deleteMutation = useDeleteDocumentMutation()
   const retryMutation = useRetryDocumentMutation()
   const reingestMutation = useReingestDocumentMutation()
@@ -122,6 +145,17 @@ export function DocumentsTable() {
     )
   }
 
+  if (collection && data && data.items.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-14 text-center">
+        <p className="text-sm font-medium">“{collection.name}” is empty</p>
+        <p className="text-sm text-muted-foreground">
+          Use the folder button on a document, or edit the collection, to add documents.
+        </p>
+      </div>
+    )
+  }
+
   if (!data || data.items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-14 text-center">
@@ -139,11 +173,11 @@ export function DocumentsTable() {
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[36%]">Title</TableHead>
-              <TableHead className="w-[16%]">Source</TableHead>
+              <TableHead className="w-[34%]">Title</TableHead>
+              <TableHead className="w-[14%]">Source</TableHead>
               <TableHead className="w-[16%]">Status</TableHead>
               <TableHead className="w-[20%]">Created</TableHead>
-              <TableHead className="w-[12%] text-right">Actions</TableHead>
+              <TableHead className="w-[16%] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -161,6 +195,18 @@ export function DocumentsTable() {
                         <span className="ml-2 text-xs font-normal text-muted-foreground">v{doc.version}</span>
                       )}
                     </p>
+                    {collections.some((c) => c.documentIds.includes(doc.id)) && (
+                      <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs font-normal text-muted-foreground">
+                        {collections
+                          .filter((c) => c.documentIds.includes(doc.id))
+                          .map((c) => (
+                            <span key={c.id} className="inline-flex max-w-[10rem] items-center gap-1 truncate">
+                              <Folder className="size-3 shrink-0" />
+                              {c.name}
+                            </span>
+                          ))}
+                      </p>
+                    )}
                     {errorView && (
                       <p className="mt-0.5 truncate text-xs font-normal text-destructive">
                         {errorView.label}
@@ -206,6 +252,17 @@ export function DocumentsTable() {
                       >
                         <RefreshCw className="size-4" />
                         <span className="sr-only">Re-ingest</span>
+                      </Button>
+                    )}
+                    {onManageCollections && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onManageCollections(doc)}
+                        title="Add to collections"
+                      >
+                        <FolderPlus className="size-4" />
+                        <span className="sr-only">Collections</span>
                       </Button>
                     )}
                     <Button variant="ghost" size="icon-sm" onClick={() => setDeleteTarget(doc)}>

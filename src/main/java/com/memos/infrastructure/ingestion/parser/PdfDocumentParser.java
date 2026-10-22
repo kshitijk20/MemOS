@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.stereotype.Component;
 
+import com.memos.application.ingestion.ChunkingPort;
 import com.memos.application.ingestion.DocumentParserPort;
 import com.memos.application.ingestion.ParsedDocument;
 import com.memos.domain.document.Document;
@@ -50,7 +51,9 @@ public class PdfDocumentParser implements DocumentParserPort {
     public List<ParsedDocument> parse(Document document) {
         Path path = Path.of(document.getSourceUri());
         try (PDDocument pdf = Loader.loadPDF(path.toFile())) {
-            String text = new PDFTextStripper().getText(pdf);
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setPageEnd("\n\n" + ChunkingPort.PAGE_BREAK + "\n\n");
+            String text = stripper.getText(pdf);
             // PDFBox can emit NUL characters for glyphs with no Unicode mapping (e.g. broken
             // font subsets); Postgres's text type rejects 0x00, so strip them before storage.
             text = text.replace("\u0000", "");

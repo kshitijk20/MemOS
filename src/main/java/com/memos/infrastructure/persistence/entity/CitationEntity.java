@@ -51,6 +51,9 @@ public class CitationEntity {
     @Column(nullable = false)
     private double score;
 
+    @Column(name = "source_number")
+    private Integer sourceNumber;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

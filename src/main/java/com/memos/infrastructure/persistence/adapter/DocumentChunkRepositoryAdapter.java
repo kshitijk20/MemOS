@@ -53,6 +53,12 @@ public class DocumentChunkRepositoryAdapter implements DocumentChunkRepositoryPo
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<DocumentChunk> findByDocumentIdAndChunkIndex(UUID documentId, int chunkIndex) {
+        return jpaRepository.findByDocumentIdAndChunkIndex(documentId, chunkIndex).map(mapper::toDomain);
+    }
+
+    @Override
     @Transactional
     public void deleteByDocumentId(UUID documentId) {
         jpaRepository.deleteByDocumentId(documentId);

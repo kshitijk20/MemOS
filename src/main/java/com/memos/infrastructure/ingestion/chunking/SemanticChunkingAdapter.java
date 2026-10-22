@@ -1,6 +1,7 @@
 package com.memos.infrastructure.ingestion.chunking;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -40,52 +41,84 @@ public class SemanticChunkingAdapter implements ChunkingPort {
             return List.of();
         }
 
+        boolean paged = content.contains(ChunkingPort.PAGE_BREAK);
         List<String> chunkTexts = new ArrayList<>();
+        List<int[]> chunkPages = new ArrayList<>();
         StringBuilder current = new StringBuilder();
+        int firstPage = -1;
+        int lastPage = -1;
 
-        for (String paragraph : splitIntoParagraphs(content)) {
-            int paragraphTokens = estimateTokens(paragraph);
+        for (Paragraph paragraph : splitIntoParagraphs(content)) {
+            int paragraphTokens = estimateTokens(paragraph.text());
 
             if (paragraphTokens > chunkSizeTokens) {
                 if (!current.isEmpty()) {
                     chunkTexts.add(current.toString().trim());
+                    chunkPages.add(new int[] {firstPage, lastPage});
                     current.setLength(0);
+                    firstPage = -1;
                 }
-                chunkTexts.addAll(splitOversizedParagraph(paragraph));
+                for (String piece : splitOversizedParagraph(paragraph.text())) {
+                    chunkTexts.add(piece);
+                    chunkPages.add(new int[] {paragraph.page(), paragraph.page()});
+                }
                 continue;
             }
 
             if (!current.isEmpty() && estimateTokens(current.toString()) + paragraphTokens > chunkSizeTokens) {
                 chunkTexts.add(current.toString().trim());
+                chunkPages.add(new int[] {firstPage, lastPage});
                 String overlap = takeTrailingTokens(current.toString(), overlapTokens);
                 current.setLength(0);
                 current.append(overlap);
                 if (!overlap.isEmpty()) {
                     current.append("\n\n");
                 }
+                // The overlap repeats the previous chunk's tail; pages count from the new content.
+                firstPage = -1;
             }
 
-            current.append(paragraph).append("\n\n");
+            if (firstPage < 0) {
+                firstPage = paragraph.page();
+            }
+            lastPage = paragraph.page();
+            current.append(paragraph.text()).append("\n\n");
         }
 
         if (!current.toString().isBlank()) {
             chunkTexts.add(current.toString().trim());
+            chunkPages.add(new int[] {firstPage, lastPage});
         }
 
         List<TextChunk> result = new ArrayList<>(chunkTexts.size());
         for (int i = 0; i < chunkTexts.size(); i++) {
             String text = chunkTexts.get(i);
-            result.add(new TextChunk(text, estimateTokens(text), Map.of("chunkIndexInSource", i)));
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("chunkIndexInSource", i);
+            if (paged && chunkPages.get(i)[0] > 0) {
+                metadata.put("pageStart", chunkPages.get(i)[0]);
+                metadata.put("pageEnd", chunkPages.get(i)[1]);
+            }
+            result.add(new TextChunk(text, estimateTokens(text), Map.copyOf(metadata)));
         }
         return result;
     }
 
-    private List<String> splitIntoParagraphs(String content) {
-        List<String> paragraphs = new ArrayList<>();
+    private record Paragraph(String text, int page) {}
+
+    /** Paragraphs in order, each tagged with its 1-based page (always 1 for unpaged content). */
+    private List<Paragraph> splitIntoParagraphs(String content) {
+        List<Paragraph> paragraphs = new ArrayList<>();
+        int page = 1;
         for (String paragraph : content.split("\\n\\s*\\n")) {
             String trimmed = paragraph.strip();
+            if (trimmed.equals(ChunkingPort.PAGE_BREAK)) {
+                page++;
+                continue;
+            }
+            trimmed = trimmed.replace(ChunkingPort.PAGE_BREAK, "").strip();
             if (!trimmed.isEmpty()) {
-                paragraphs.add(trimmed);
+                paragraphs.add(new Paragraph(trimmed, page));
             }
         }
         return paragraphs;

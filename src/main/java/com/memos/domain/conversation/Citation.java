@@ -23,5 +23,8 @@ public class Citation {
     private final String sourceTitle;
     private final String snippet;
     private final double score;
+
+    /** The [n] this source had in the prompt, i.e. how the answer refers to it. */
+    private final Integer sourceNumber;
     private final Instant createdAt;
 }

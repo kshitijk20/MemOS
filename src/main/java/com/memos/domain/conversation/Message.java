@@ -19,4 +19,14 @@ public class Message {
     private final String content;
     private final List<Citation> citations;
     private final Instant createdAt;
+
+    /** True when the assistant could not answer from the user's documents. */
+    private final boolean unanswered;
+
+    /** Standalone query actually searched, when a follow-up question was rewritten. */
+    private final String searchQuery;
+
+    private final MessageFeedback feedback;
+    private final String feedbackComment;
+    private final Instant feedbackAt;
 }

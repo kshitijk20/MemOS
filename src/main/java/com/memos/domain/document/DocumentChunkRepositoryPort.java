@@ -17,6 +17,8 @@ public interface DocumentChunkRepositoryPort {
 
     Optional<DocumentChunk> findByIdAndDocumentId(UUID chunkId, UUID documentId);
 
+    Optional<DocumentChunk> findByDocumentIdAndChunkIndex(UUID documentId, int chunkIndex);
+
     void deleteByDocumentId(UUID documentId);
 
     /**

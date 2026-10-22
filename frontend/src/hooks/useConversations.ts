@@ -5,12 +5,21 @@ import {
   deleteConversation,
   getConversation,
   listConversations,
+  listFeedback,
   listMessages,
   sendMessage,
+  setMessageFeedback,
   updateConversationScope,
 } from '@/api/conversations'
 import { extractErrorMessage } from '@/api/client'
-import type { CreateConversationRequest, SendMessageRequest } from '@/api/types'
+import type {
+  ConversationScope,
+  CreateConversationRequest,
+  MessageFeedback,
+  MessageResponse,
+  PageResponse,
+  SendMessageRequest,
+} from '@/api/types'
 
 const MESSAGES_PAGE_SIZE = 100
 
@@ -44,7 +53,7 @@ export function useCreateConversationMutation() {
 export function useUpdateConversationScopeMutation(conversationId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (documentIds: string[]) => updateConversationScope(conversationId, documentIds),
+    mutationFn: (scope: ConversationScope) => updateConversationScope(conversationId, scope),
     onSuccess: () => {
       toast.success('Source filter updated')
       queryClient.invalidateQueries({ queryKey: ['conversations', conversationId] })
@@ -74,6 +83,47 @@ export function useMessagesQuery(conversationId: string) {
   return useQuery({
     queryKey: ['messages', conversationId],
     queryFn: () => listMessages(conversationId, 0, MESSAGES_PAGE_SIZE),
+  })
+}
+
+/** Rates an answer, updating the cached message list right away and rolling back on failure. */
+export function useMessageFeedbackMutation(conversationId: string) {
+  const queryClient = useQueryClient()
+  const key = ['messages', conversationId]
+  return useMutation({
+    mutationFn: ({ messageId, feedback, comment }: { messageId: string; feedback: MessageFeedback | null; comment?: string }) =>
+      setMessageFeedback(conversationId, messageId, feedback, comment),
+    onMutate: async ({ messageId, feedback, comment }) => {
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<PageResponse<MessageResponse>>(key)
+      if (previous) {
+        queryClient.setQueryData<PageResponse<MessageResponse>>(key, {
+          ...previous,
+          items: previous.items.map((message) =>
+            message.id === messageId
+              ? { ...message, feedback, feedbackComment: feedback ? (comment ?? message.feedbackComment) : null }
+              : message,
+          ),
+        })
+      }
+      return { previous }
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous)
+      toast.error(extractErrorMessage(error))
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: key })
+      queryClient.invalidateQueries({ queryKey: ['feedback'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
+}
+
+export function useFeedbackQuery(rating: MessageFeedback | null, size: number) {
+  return useQuery({
+    queryKey: ['feedback', rating, size],
+    queryFn: () => listFeedback(rating, 0, size),
   })
 }
 

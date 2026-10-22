@@ -2,6 +2,7 @@ package com.memos.web.conversation;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -32,6 +34,7 @@ import com.memos.domain.common.PageResult;
 import com.memos.domain.conversation.Citation;
 import com.memos.domain.conversation.Conversation;
 import com.memos.domain.conversation.Message;
+import com.memos.domain.conversation.MessageFeedback;
 import com.memos.domain.conversation.MessageRole;
 import com.memos.domain.exception.ResourceNotFoundException;
 import com.memos.domain.user.Role;
@@ -92,7 +95,7 @@ class ConversationControllerTest {
     @Test
     void createReturnsCreatedConversation() throws Exception {
         UUID conversationId = UUID.randomUUID();
-        when(conversationApplicationService.create(eq(userId), eq("My chat"), eq(AiProvider.GEMINI), any(), any()))
+        when(conversationApplicationService.create(eq(userId), eq("My chat"), eq(AiProvider.GEMINI), any(), any(), any()))
                 .thenReturn(conversation(conversationId));
 
         mockMvc.perform(post("/api/v1/conversations")
@@ -146,7 +149,7 @@ class ConversationControllerTest {
         Conversation updated = conversation(conversationId).toBuilder()
                 .documentScope(List.of(documentId))
                 .build();
-        when(conversationApplicationService.updateDocumentScope(eq(userId), eq(conversationId), eq(List.of(documentId))))
+        when(conversationApplicationService.updateScope(eq(userId), eq(conversationId), eq(List.of(documentId)), isNull()))
                 .thenReturn(updated);
 
         mockMvc.perform(patch("/api/v1/conversations/{id}/scope", conversationId)
@@ -241,5 +244,41 @@ class ConversationControllerTest {
                                 {"content":""}
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void setFeedbackReturnsRatedMessage() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        UUID messageId = UUID.randomUUID();
+        Message rated = Message.builder()
+                .id(messageId)
+                .conversationId(conversationId)
+                .role(MessageRole.ASSISTANT)
+                .content("answer")
+                .createdAt(Instant.now())
+                .feedback(MessageFeedback.DOWN)
+                .feedbackComment("wrong")
+                .build();
+        when(conversationApplicationService.setFeedback(userId, conversationId, messageId, MessageFeedback.DOWN, "wrong"))
+                .thenReturn(rated);
+
+        mockMvc.perform(put("/api/v1/conversations/{id}/messages/{messageId}/feedback", conversationId, messageId)
+                        .with(asUser())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"feedback\":\"DOWN\",\"comment\":\"wrong\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feedback").value("DOWN"))
+                .andExpect(jsonPath("$.feedbackComment").value("wrong"));
+    }
+
+    @Test
+    void setFeedbackRejectsUnknownRatings() throws Exception {
+        mockMvc.perform(put("/api/v1/conversations/{id}/messages/{messageId}/feedback", UUID.randomUUID(), UUID.randomUUID())
+                        .with(asUser())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"feedback\":\"MEH\"}"))
+                .andExpect(status().is4xxClientError());
     }
 }

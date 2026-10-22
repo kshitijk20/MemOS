@@ -19,6 +19,8 @@ public interface DocumentChunkJpaRepository extends JpaRepository<DocumentChunkE
 
     Optional<DocumentChunkEntity> findByIdAndDocumentId(UUID id, UUID documentId);
 
+    Optional<DocumentChunkEntity> findByDocumentIdAndChunkIndex(UUID documentId, int chunkIndex);
+
     /** Single bulk DELETE; the derived form would load every chunk (and its vector) first. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM DocumentChunkEntity c WHERE c.documentId = :documentId")

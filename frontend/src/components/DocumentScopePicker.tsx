@@ -15,9 +15,24 @@ interface DocumentScopePickerProps {
   documents: DocumentResponse[]
   selectedIds: string[]
   onChange: (ids: string[]) => void
+  /** Overrides the line under the list that explains what the selection means. */
+  summary?: (selectedCount: number) => string
+  emptyText?: string
 }
 
-export function DocumentScopePicker({ documents, selectedIds, onChange }: DocumentScopePickerProps) {
+function defaultSummary(count: number): string {
+  return count === 0
+    ? 'Searching all completed documents.'
+    : `${count} source${count > 1 ? 's' : ''} — answers only use these.`
+}
+
+export function DocumentScopePicker({
+  documents,
+  selectedIds,
+  onChange,
+  summary = defaultSummary,
+  emptyText = 'No completed documents match.',
+}: DocumentScopePickerProps) {
   const [query, setQuery] = useState('')
 
   const filtered = useMemo(() => {
@@ -45,12 +60,12 @@ export function DocumentScopePicker({ documents, selectedIds, onChange }: Docume
           className="h-8"
         />
         <Button type="button" variant="ghost" size="sm" onClick={() => onChange([])}>
-          All
+          Clear
         </Button>
       </div>
       <div className="flex max-h-52 flex-col gap-1 overflow-y-auto rounded-md border p-2">
         {filtered.length === 0 ? (
-          <p className="px-1 py-2 text-xs text-muted-foreground">No completed documents match.</p>
+          <p className="px-1 py-2 text-xs text-muted-foreground">{emptyText}</p>
         ) : (
           filtered.map((doc) => {
             const selected = selectedIds.includes(doc.id)
@@ -80,11 +95,7 @@ export function DocumentScopePicker({ documents, selectedIds, onChange }: Docume
           })
         )}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {selectedIds.length === 0
-          ? 'Searching all completed documents.'
-          : `${selectedIds.length} source${selectedIds.length > 1 ? 's' : ''} — answers only use these.`}
-      </p>
+      <p className="text-xs text-muted-foreground">{summary(selectedIds.length)}</p>
     </div>
   )
 }

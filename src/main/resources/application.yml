@@ -116,6 +116,10 @@ memos:
     candidate-pool: ${MEMOS_RAG_CANDIDATE_POOL:20}
     min-score: ${MEMOS_RAG_MIN_SCORE:0.35}
     rrf-k: ${MEMOS_RAG_RRF_K:60}
+    # Rewrites follow-up questions ("what about the second one?") into standalone search
+    # queries using the chat history. Costs one extra LLM call per follow-up.
+    query-rewrite:
+      enabled: ${MEMOS_RAG_QUERY_REWRITE_ENABLED:true}
 
   ingestion:
     chunk-size-tokens: 500

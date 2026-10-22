@@ -17,5 +17,8 @@ public record CreateConversationRequest(
         @Size(max = 100)
         String model,
 
-        List<UUID> documentIds) {
+        List<UUID> documentIds,
+
+        /** Limits the chat to a collection; takes precedence over documentIds. */
+        UUID collectionId) {
 }

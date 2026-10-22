@@ -20,8 +20,10 @@ import {
 } from '@/components/ui/select'
 import { useCreateConversationMutation } from '@/hooks/useConversations'
 import { useDocumentsQuery } from '@/hooks/useDocuments'
-import { DocumentScopePicker } from '@/components/DocumentScopePicker'
-import type { AiProvider } from '@/api/types'
+import { ScopeSelector } from '@/components/ScopeSelector'
+import { useCollectionsQuery } from '@/hooks/useCollections'
+import { normalizeScope } from '@/lib/scope'
+import type { AiProvider, ConversationScope } from '@/api/types'
 
 const PROVIDERS: AiProvider[] = ['GEMINI', 'OPENAI', 'CLAUDE']
 
@@ -35,9 +37,10 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
   const [title, setTitle] = useState('')
   const [provider, setProvider] = useState<AiProvider>('GEMINI')
   const [model, setModel] = useState('')
-  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
+  const [scope, setScope] = useState<ConversationScope>({ kind: 'all' })
   const createMutation = useCreateConversationMutation()
-  const { data: docsPage } = useDocumentsQuery(0, 50)
+  const { data: docsPage } = useDocumentsQuery(0, 100)
+  const { data: collections = [] } = useCollectionsQuery()
 
   const readyDocs = docsPage?.items.filter((d) => d.status === 'COMPLETED') ?? []
 
@@ -45,18 +48,20 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
     setTitle('')
     setProvider('GEMINI')
     setModel('')
-    setSelectedDocIds([])
+    setScope({ kind: 'all' })
     onOpenChange(false)
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    const effective = normalizeScope(scope)
     try {
       const conversation = await createMutation.mutateAsync({
         title: title.trim() === '' ? undefined : title.trim(),
         provider,
         model: model.trim() === '' ? undefined : model.trim(),
-        documentIds: selectedDocIds.length > 0 ? selectedDocIds : undefined,
+        documentIds: effective.kind === 'documents' ? effective.documentIds : undefined,
+        collectionId: effective.kind === 'collection' ? effective.collectionId : undefined,
       })
       resetAndClose()
       navigate(`/conversations/${conversation.id}`)
@@ -109,17 +114,8 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
 
           {readyDocs.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div>
-                <Label>Filter sources (optional)</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Pick a PDF, URL, or repo to search only that source. Leave empty to search all documents.
-                </p>
-              </div>
-              <DocumentScopePicker
-                documents={readyDocs}
-                selectedIds={selectedDocIds}
-                onChange={setSelectedDocIds}
-              />
+              <Label>What should this chat search?</Label>
+              <ScopeSelector value={scope} onChange={setScope} collections={collections} documents={readyDocs} />
             </div>
           )}
 

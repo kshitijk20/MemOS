@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/StatusBadge'
+import { AnswersToImprove } from '@/components/AnswersToImprove'
 import { useStatsQuery } from '@/hooks/useStats'
 import { useDocumentsQuery } from '@/hooks/useDocuments'
 import { useConversationsQuery } from '@/hooks/useConversations'
@@ -203,6 +204,8 @@ export function DashboardPage() {
           </Card>
         </div>
       </div>
+
+      <AnswersToImprove helpful={stats?.helpfulAnswers} unhelpful={stats?.unhelpfulAnswers} />
 
       {/* Ingestion alert if any processing/failed */}
       {!statsLoading && (stats?.processingDocuments ?? 0) > 0 && (

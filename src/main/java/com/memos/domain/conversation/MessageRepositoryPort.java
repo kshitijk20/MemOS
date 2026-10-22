@@ -1,6 +1,8 @@
 package com.memos.domain.conversation;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.memos.domain.common.PageRequest;
@@ -22,4 +24,14 @@ public interface MessageRepositoryPort {
     List<Message> findRecentByConversationId(UUID conversationId, int limit);
 
     long countByConversationId(UUID conversationId);
+
+    Optional<Message> findByIdAndConversationId(UUID id, UUID conversationId);
+
+    /** Sets or clears ({@code feedback == null}) a message's rating without touching anything else. */
+    void updateFeedback(UUID messageId, MessageFeedback feedback, String comment, Instant feedbackAt);
+
+    /** Rated answers in the user's conversations, newest rating first; {@code feedback == null} returns both kinds. */
+    PageResult<FeedbackEntry> findFeedbackByUserId(UUID userId, MessageFeedback feedback, PageRequest pageRequest);
+
+    long countFeedbackByUserId(UUID userId, MessageFeedback feedback);
 }

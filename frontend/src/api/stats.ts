@@ -6,6 +6,8 @@ export interface StatsResponse {
   processingDocuments: number
   failedDocuments: number
   totalConversations: number
+  helpfulAnswers: number
+  unhelpfulAnswers: number
 }
 
 export async function fetchStats(): Promise<StatsResponse> {

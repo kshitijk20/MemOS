@@ -7,5 +7,12 @@ import java.util.List;
  */
 public interface ChunkingPort {
 
+    /**
+     * Page separator a parser may put on its own paragraph between pages (e.g. PDF). The chunker
+     * removes it and records each chunk's page range as {@code pageStart}/{@code pageEnd} metadata.
+     * A private-use character, so it never collides with real document text.
+     */
+    String PAGE_BREAK = "\uE000";
+
     List<TextChunk> chunk(String content);
 }
