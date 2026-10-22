@@ -1,5 +1,6 @@
 package com.memos.infrastructure.persistence.adapter;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -9,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.memos.domain.common.PageResult;
 import com.memos.domain.document.Document;
 import com.memos.domain.document.DocumentRepositoryPort;
+import com.memos.domain.document.DocumentStatus;
 import com.memos.infrastructure.persistence.PageMappingUtil;
 import com.memos.infrastructure.persistence.mapper.DocumentMapper;
 import com.memos.infrastructure.persistence.repository.DocumentJpaRepository;
@@ -56,5 +58,35 @@ public class DocumentRepositoryAdapter implements DocumentRepositoryPort {
     @Transactional(readOnly = true)
     public boolean existsByIdAndOwnerId(UUID id, UUID ownerId) {
         return jpaRepository.existsByIdAndOwnerId(id, ownerId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countByOwnerId(UUID ownerId) {
+        return jpaRepository.countByOwnerId(ownerId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countByOwnerIdAndStatus(UUID ownerId, DocumentStatus status) {
+        return jpaRepository.countByOwnerIdAndStatus(ownerId, status);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Document> findByOwnerIdAndSourceFingerprint(UUID ownerId, String sourceFingerprint) {
+        return jpaRepository.findByOwnerIdAndSourceFingerprint(ownerId, sourceFingerprint).map(mapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Document> findAllByStatus(DocumentStatus status) {
+        return jpaRepository.findAllByStatus(status).stream().map(mapper::toDomain).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Document> findAllBySourceFingerprintIsNull() {
+        return jpaRepository.findAllBySourceFingerprintIsNull().stream().map(mapper::toDomain).toList();
     }
 }

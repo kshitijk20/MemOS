@@ -15,6 +15,7 @@ public record DocumentResponse(
         String sourceUri,
         DocumentStatus status,
         String errorMessage,
+        int version,
         Map<String, Object> metadata,
         Instant createdAt,
         Instant updatedAt) {
@@ -27,6 +28,7 @@ public record DocumentResponse(
                 document.getSourceUri(),
                 document.getStatus(),
                 document.getErrorMessage(),
+                document.getVersion(),
                 document.getMetadata(),
                 document.getCreatedAt(),
                 document.getUpdatedAt());

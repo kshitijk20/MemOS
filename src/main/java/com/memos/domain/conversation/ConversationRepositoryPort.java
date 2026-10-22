@@ -19,4 +19,6 @@ public interface ConversationRepositoryPort {
     void deleteById(UUID id);
 
     boolean existsByIdAndUserId(UUID id, UUID userId);
+
+    long countByUserId(UUID userId);
 }

@@ -33,7 +33,10 @@ export function RegisterPage() {
   return (
     <div className="flex min-h-svh items-center justify-center px-4">
       <Card className="w-full max-w-sm">
-        <CardHeader>
+        <CardHeader className="items-center text-center">
+          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold">
+            M
+          </div>
           <CardTitle className="text-2xl">Create an account</CardTitle>
           <CardDescription>Sign up to start using MemOS</CardDescription>
         </CardHeader>

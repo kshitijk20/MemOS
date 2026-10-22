@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import com.memos.domain.exception.ResourceNotFoundException;
 import com.memos.infrastructure.ai.chat.ChatPortResolver;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Orchestrates the retrieval-augmented generation flow for a single user question: persists the
@@ -30,16 +32,26 @@ import lombok.RequiredArgsConstructor;
  * history), calls the conversation's configured chat provider, and persists the assistant's
  * reply together with citations to the chunks used as context.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RagQueryService {
 
     private static final int CITATION_SNIPPET_MAX_CHARS = 500;
+    private static final String DEFAULT_TITLE = "New conversation";
+    private static final int GENERATED_TITLE_MAX_LENGTH = 100;
+    static final String UNSURE_ANSWER =
+            "I don't know based on your documents. Nothing retrieved was similar enough to answer confidently.";
+
+    public record StreamResult(Message assistantMessage, String generatedTitle) {}
+
+    private record PersistedReply(Message message, String generatedTitle) {}
 
     private final ConversationRepositoryPort conversationRepositoryPort;
     private final MessageRepositoryPort messageRepositoryPort;
     private final EmbeddingPort embeddingPort;
     private final RetrievalPort retrievalPort;
+    private final RerankPort rerankPort;
     private final ChatPortResolver chatPortResolver;
 
     @Value("${memos.rag.top-k}")
@@ -51,19 +63,24 @@ public class RagQueryService {
     @Value("${memos.rag.max-context-chars}")
     private int maxContextChars;
 
+    @Value("${memos.rag.candidate-pool:20}")
+    private int candidatePool;
+
+    @Value("${memos.rag.min-score:0.35}")
+    private double minScore;
+
     public Message askQuestion(UUID userId, UUID conversationId, String question) {
         Conversation conversation = conversationRepositoryPort.findByIdAndUserId(conversationId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Conversation", conversationId));
 
-        messageRepositoryPort.save(Message.builder()
-                .conversationId(conversationId)
-                .role(MessageRole.USER)
-                .content(question)
-                .createdAt(Instant.now())
-                .build());
+        persistUserQuestion(conversationId, question);
 
         float[] queryEmbedding = embeddingPort.embed(question);
-        List<RetrievedChunk> retrievedChunks = retrievalPort.findSimilar(userId, queryEmbedding, topK);
+        List<RetrievedChunk> retrievedChunks = retrieve(userId, question, queryEmbedding, conversation);
+
+        if (shouldAbstain(retrievedChunks)) {
+            return persistAssistant(conversation, question, UNSURE_ANSWER, List.of()).message();
+        }
 
         List<ChatMessage> promptMessages = buildPrompt(conversationId, retrievedChunks);
 
@@ -73,28 +90,105 @@ public class RagQueryService {
                 .model(conversation.getModel())
                 .build());
 
-        List<Citation> citations = retrievedChunks.stream()
-                .map(chunk -> Citation.builder()
-                        .documentId(chunk.documentId())
-                        .documentChunkId(chunk.chunkId())
-                        .sourceTitle(chunk.sourceTitle())
-                        .snippet(truncateSnippet(chunk.content()))
-                        .score(chunk.score())
-                        .createdAt(Instant.now())
-                        .build())
-                .toList();
+        return persistAssistant(conversation, question, result.getContent(), toCitations(retrievedChunks)).message();
+    }
 
-        Message assistantMessage = messageRepositoryPort.save(Message.builder()
+    public StreamResult streamQuestion(UUID userId, UUID conversationId, String question, Consumer<String> tokenConsumer) {
+        Conversation conversation = conversationRepositoryPort.findByIdAndUserId(conversationId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation", conversationId));
+
+        persistUserQuestion(conversationId, question);
+
+        float[] queryEmbedding = embeddingPort.embed(question);
+        List<RetrievedChunk> retrievedChunks = retrieve(userId, question, queryEmbedding, conversation);
+
+        if (shouldAbstain(retrievedChunks)) {
+            tokenConsumer.accept(UNSURE_ANSWER);
+            PersistedReply persisted = persistAssistant(conversation, question, UNSURE_ANSWER, List.of());
+            return new StreamResult(persisted.message(), persisted.generatedTitle());
+        }
+
+        List<ChatMessage> promptMessages = buildPrompt(conversationId, retrievedChunks);
+
+        ChatPort chatPort = chatPortResolver.resolve(conversation.getProvider());
+        StringBuilder fullContent = new StringBuilder();
+        chatPort.streamComplete(
+                ChatCompletionRequest.builder()
+                        .messages(promptMessages)
+                        .model(conversation.getModel())
+                        .build(),
+                token -> {
+                    fullContent.append(token);
+                    tokenConsumer.accept(token);
+                });
+
+        PersistedReply persisted = persistAssistant(
+                conversation, question, fullContent.toString(), toCitations(retrievedChunks));
+        return new StreamResult(persisted.message(), persisted.generatedTitle());
+    }
+
+    private void persistUserQuestion(UUID conversationId, String question) {
+        messageRepositoryPort.save(Message.builder()
                 .conversationId(conversationId)
+                .role(MessageRole.USER)
+                .content(question)
+                .createdAt(Instant.now())
+                .build());
+    }
+
+    private PersistedReply persistAssistant(
+            Conversation conversation,
+            String question,
+            String content,
+            List<Citation> citations) {
+        Message assistantMessage = messageRepositoryPort.save(Message.builder()
+                .conversationId(conversation.getId())
                 .role(MessageRole.ASSISTANT)
-                .content(result.getContent())
+                .content(content)
                 .citations(citations)
                 .createdAt(Instant.now())
                 .build());
 
         conversationRepositoryPort.save(conversation.withTouchedTimestamp());
+        String generatedTitle = generateTitleIfNeeded(conversation, question);
+        return new PersistedReply(assistantMessage, generatedTitle);
+    }
 
-        return assistantMessage;
+    private List<Citation> toCitations(List<RetrievedChunk> retrievedChunks) {
+        return retrievedChunks.stream()
+                .map(chunk -> Citation.builder()
+                        .documentId(chunk.documentId())
+                        .documentChunkId(chunk.chunkId())
+                        .sourceTitle(chunk.sourceTitle())
+                        .snippet(truncateSnippet(chunk.content()))
+                        .score(chunk.vectorScore() > 0 ? chunk.vectorScore() : chunk.score())
+                        .createdAt(Instant.now())
+                        .build())
+                .toList();
+    }
+
+    private List<RetrievedChunk> retrieve(
+            UUID userId, String question, float[] queryEmbedding, Conversation conversation) {
+        List<UUID> scope = conversation.getDocumentScope() == null ? List.of() : conversation.getDocumentScope();
+        int candidateLimit = Math.max(topK * 4, candidatePool);
+        List<RetrievedChunk> candidates =
+                retrievalPort.findHybrid(userId, question, queryEmbedding, scope, candidateLimit);
+        return rerankPort.rerank(question, candidates, topK);
+    }
+
+    private boolean shouldAbstain(List<RetrievedChunk> retrievedChunks) {
+        if (retrievedChunks == null || retrievedChunks.isEmpty()) {
+            return true;
+        }
+        boolean lexicalHit = retrievedChunks.stream().anyMatch(RetrievedChunk::lexicalHit);
+        if (lexicalHit) {
+            return false;
+        }
+        double bestVector = retrievedChunks.stream()
+                .mapToDouble(RetrievedChunk::vectorScore)
+                .max()
+                .orElse(0);
+        return bestVector < minScore;
     }
 
     /**
@@ -119,9 +213,9 @@ public class RagQueryService {
 
     private String buildSystemPrompt(List<RetrievedChunk> retrievedChunks) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are MemOS, a knowledge assistant. Answer the user's question using only the "
-                + "context sources below. If the context does not contain the answer, say you don't know "
-                + "rather than guessing. Refer to sources by their [number] when relevant.\n\n");
+        prompt.append("You are MemOS, a knowledge assistant. Answer only from the context sources below. "
+                + "If the sources do not contain the answer, say you don't know. Do not guess or use general knowledge. "
+                + "Refer to sources by their [number] when relevant.\n\n");
 
         int remaining = maxContextChars;
         for (int i = 0; i < retrievedChunks.size(); i++) {
@@ -135,6 +229,37 @@ public class RagQueryService {
         }
 
         return prompt.toString();
+    }
+
+    private String generateTitleIfNeeded(Conversation conversation, String userQuestion) {
+        if (!DEFAULT_TITLE.equals(conversation.getTitle())) {
+            return null;
+        }
+        long messageCount = messageRepositoryPort.countByConversationId(conversation.getId());
+        if (messageCount != 2) {
+            return null;
+        }
+
+        try {
+            ChatPort chatPort = chatPortResolver.resolve(conversation.getProvider());
+            ChatCompletionResult result = chatPort.complete(ChatCompletionRequest.builder()
+                    .messages(List.of(ChatMessage.user(
+                            "Write a concise title (5 words max, no quotes or punctuation) "
+                                    + "for a conversation that starts with this question: " + userQuestion)))
+                    .build());
+            String title = result.getContent().trim().replaceAll("[\"'.,!?]", "");
+            if (title.length() > GENERATED_TITLE_MAX_LENGTH) {
+                title = title.substring(0, GENERATED_TITLE_MAX_LENGTH);
+            }
+            conversationRepositoryPort.save(conversation.toBuilder()
+                    .title(title)
+                    .updatedAt(Instant.now())
+                    .build());
+            return title;
+        } catch (Exception e) {
+            log.warn("Auto-title generation failed for conversation {}: {}", conversation.getId(), e.getMessage());
+            return null;
+        }
     }
 
     private String truncateSnippet(String content) {

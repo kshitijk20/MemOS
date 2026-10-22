@@ -60,6 +60,13 @@ public class DocumentEntity {
     @Column(name = "error_message", columnDefinition = "text")
     private String errorMessage;
 
+    @Column(name = "source_fingerprint", length = 64)
+    private String sourceFingerprint;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer version = 1;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     @Builder.Default
@@ -80,6 +87,9 @@ public class DocumentEntity {
         updatedAt = now;
         if (metadata == null) {
             metadata = new HashMap<>();
+        }
+        if (version == null) {
+            version = 1;
         }
     }
 

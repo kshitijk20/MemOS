@@ -58,6 +58,11 @@ public class MessageRepositoryAdapter implements MessageRepositoryPort {
         return Collections.unmodifiableList(reversed(messages));
     }
 
+    @Override
+    public long countByConversationId(UUID conversationId) {
+        return jpaRepository.countByConversationId(conversationId);
+    }
+
     private static <T> List<T> reversed(List<T> list) {
         List<T> copy = new java.util.ArrayList<>(list);
         Collections.reverse(copy);

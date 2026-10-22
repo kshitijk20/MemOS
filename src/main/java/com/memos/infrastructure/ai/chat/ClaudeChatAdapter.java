@@ -1,6 +1,7 @@
 package com.memos.infrastructure.ai.chat;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
@@ -87,6 +88,34 @@ public class ClaudeChatAdapter implements ChatPort {
                     .build();
         } catch (Exception e) {
             throw new AiProviderException("Claude chat completion failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void streamComplete(ChatCompletionRequest request, Consumer<String> tokenConsumer) {
+        try {
+            List<Message> messages = request.getMessages().stream().map(this::toSpringMessage).toList();
+            String model = request.getModel() != null ? request.getModel() : config.getChatModel();
+            double temperature = request.getTemperature() != null ? request.getTemperature() : config.getTemperature();
+
+            AnthropicChatOptions options = AnthropicChatOptions.builder()
+                    .model(model)
+                    .temperature(temperature)
+                    .maxTokens(config.getMaxTokens())
+                    .build();
+
+            chatModel.stream(new Prompt(messages, options))
+                    .toStream()
+                    .forEach(response -> {
+                        if (response.getResult() != null && response.getResult().getOutput() != null) {
+                            String token = response.getResult().getOutput().getText();
+                            if (token != null && !token.isEmpty()) {
+                                tokenConsumer.accept(token);
+                            }
+                        }
+                    });
+        } catch (Exception e) {
+            throw new AiProviderException("Claude streaming failed: " + e.getMessage(), e);
         }
     }
 

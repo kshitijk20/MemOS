@@ -4,13 +4,24 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Port for vector-similarity retrieval over a user's document chunks.
+ * Retrieval over a user's document chunks: vector similarity and hybrid (vector + keyword).
  */
 public interface RetrievalPort {
 
-    /**
-     * Returns the {@code topK} chunks most similar to {@code queryEmbedding}, restricted to
-     * documents owned by {@code ownerId}, ordered by similarity descending.
-     */
+    /** Searches all COMPLETED documents owned by {@code ownerId}. */
     List<RetrievedChunk> findSimilar(UUID ownerId, float[] queryEmbedding, int topK);
+
+    /** Searches only within the given document IDs (must be owned by {@code ownerId}). */
+    List<RetrievedChunk> findSimilarInScope(UUID ownerId, float[] queryEmbedding, List<UUID> documentScope, int topK);
+
+    /**
+     * Hybrid retrieval: cosine similarity plus keyword/identifier search, fused with RRF.
+     * {@code documentScope} empty or null searches all completed documents for the owner.
+     */
+    List<RetrievedChunk> findHybrid(
+            UUID ownerId,
+            String query,
+            float[] queryEmbedding,
+            List<UUID> documentScope,
+            int limit);
 }

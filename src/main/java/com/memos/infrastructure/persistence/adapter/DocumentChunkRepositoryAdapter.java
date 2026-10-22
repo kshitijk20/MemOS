@@ -1,6 +1,7 @@
 package com.memos.infrastructure.persistence.adapter;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -43,6 +44,12 @@ public class DocumentChunkRepositoryAdapter implements DocumentChunkRepositoryPo
         return PageMappingUtil.toPageResult(
                 jpaRepository.findByDocumentId(documentId, PageMappingUtil.toPageable(pageRequest)),
                 mapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<DocumentChunk> findByIdAndDocumentId(UUID chunkId, UUID documentId) {
+        return jpaRepository.findByIdAndDocumentId(chunkId, documentId).map(mapper::toDomain);
     }
 
     @Override

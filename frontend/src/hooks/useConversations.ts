@@ -7,6 +7,7 @@ import {
   listConversations,
   listMessages,
   sendMessage,
+  updateConversationScope,
 } from '@/api/conversations'
 import { extractErrorMessage } from '@/api/client'
 import type { CreateConversationRequest, SendMessageRequest } from '@/api/types'
@@ -32,6 +33,21 @@ export function useCreateConversationMutation() {
   return useMutation({
     mutationFn: (payload: CreateConversationRequest) => createConversation(payload),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    },
+    onError: (error) => {
+      toast.error(extractErrorMessage(error))
+    },
+  })
+}
+
+export function useUpdateConversationScopeMutation(conversationId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (documentIds: string[]) => updateConversationScope(conversationId, documentIds),
+    onSuccess: () => {
+      toast.success('Source filter updated')
+      queryClient.invalidateQueries({ queryKey: ['conversations', conversationId] })
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
     },
     onError: (error) => {

@@ -1,6 +1,7 @@
 package com.memos.infrastructure.ai.chat;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -87,6 +88,33 @@ public class OpenAiChatAdapter implements ChatPort {
                     .build();
         } catch (Exception e) {
             throw new AiProviderException("OpenAI chat completion failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void streamComplete(ChatCompletionRequest request, Consumer<String> tokenConsumer) {
+        try {
+            List<Message> messages = request.getMessages().stream().map(this::toSpringMessage).toList();
+            String model = request.getModel() != null ? request.getModel() : config.getChatModel();
+            double temperature = request.getTemperature() != null ? request.getTemperature() : config.getTemperature();
+
+            OpenAiChatOptions options = OpenAiChatOptions.builder()
+                    .model(model)
+                    .temperature(temperature)
+                    .build();
+
+            chatModel.stream(new Prompt(messages, options))
+                    .toStream()
+                    .forEach(response -> {
+                        if (response.getResult() != null && response.getResult().getOutput() != null) {
+                            String token = response.getResult().getOutput().getText();
+                            if (token != null && !token.isEmpty()) {
+                                tokenConsumer.accept(token);
+                            }
+                        }
+                    });
+        } catch (Exception e) {
+            throw new AiProviderException("OpenAI streaming failed: " + e.getMessage(), e);
         }
     }
 

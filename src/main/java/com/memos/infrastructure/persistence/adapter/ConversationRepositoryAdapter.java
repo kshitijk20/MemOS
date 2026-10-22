@@ -58,4 +58,10 @@ public class ConversationRepositoryAdapter implements ConversationRepositoryPort
     public boolean existsByIdAndUserId(UUID id, UUID userId) {
         return jpaRepository.existsByIdAndUserId(id, userId);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countByUserId(UUID userId) {
+        return jpaRepository.countByUserId(userId);
+    }
 }

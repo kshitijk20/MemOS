@@ -1,6 +1,7 @@
 package com.memos.domain.document;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.memos.domain.common.PageRequest;
@@ -13,6 +14,8 @@ public interface DocumentChunkRepositoryPort {
     List<DocumentChunk> saveAll(List<DocumentChunk> chunks);
 
     PageResult<DocumentChunk> findByDocumentId(UUID documentId, PageRequest pageRequest);
+
+    Optional<DocumentChunk> findByIdAndDocumentId(UUID chunkId, UUID documentId);
 
     void deleteByDocumentId(UUID documentId);
 

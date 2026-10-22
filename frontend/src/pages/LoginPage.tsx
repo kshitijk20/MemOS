@@ -32,7 +32,10 @@ export function LoginPage() {
   return (
     <div className="flex min-h-svh items-center justify-center px-4">
       <Card className="w-full max-w-sm">
-        <CardHeader>
+        <CardHeader className="items-center text-center">
+          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold">
+            M
+          </div>
           <CardTitle className="text-2xl">Sign in</CardTitle>
           <CardDescription>Sign in to your MemOS account</CardDescription>
         </CardHeader>
@@ -66,6 +69,9 @@ export function LoginPage() {
             </Button>
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
+            Forgot your password? Sign in if you can, then reset it in Settings.
+          </p>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
             Don't have an account?{' '}
             <Link to="/register" className="font-medium text-primary underline-offset-4 hover:underline">
               Sign up

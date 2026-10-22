@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MessageSquarePlus, Trash2 } from 'lucide-react'
+import { ChevronRight, MessageSquare, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -64,28 +64,37 @@ export function ConversationsList({ onNewConversation }: { onNewConversation: ()
         {data.items.map((conversation) => (
           <Card
             key={conversation.id}
-            className="flex cursor-pointer flex-row items-center justify-between gap-4 p-4 transition-colors hover:bg-muted/50"
+            className="group flex cursor-pointer flex-row items-center gap-3 p-4 transition-all hover:bg-muted/40"
             onClick={() => navigate(`/conversations/${conversation.id}`)}
           >
-            <div className="flex flex-col gap-1">
-              <span className="font-medium">{conversation.title ?? 'Untitled conversation'}</span>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{conversation.provider}</Badge>
-                <span className="text-xs text-muted-foreground">{conversation.model}</span>
-              </div>
-              <span className="text-xs text-muted-foreground">Updated {formatDate(conversation.updatedAt)}</span>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+              <MessageSquare className="size-4 text-muted-foreground" />
             </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                setDeleteTarget(conversation)
-              }}
-            >
-              <Trash2 className="size-4" />
-              <span className="sr-only">Delete</span>
-            </Button>
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate font-medium">{conversation.title ?? 'Untitled conversation'}</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="shrink-0 text-xs">{conversation.provider}</Badge>
+                {conversation.model && (
+                  <span className="truncate text-xs text-muted-foreground">{conversation.model}</span>
+                )}
+                <span className="shrink-0 text-xs text-muted-foreground">· {formatDate(conversation.updatedAt)}</span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDeleteTarget(conversation)
+                }}
+              >
+                <Trash2 className="size-4" />
+                <span className="sr-only">Delete</span>
+              </Button>
+              <ChevronRight className="size-4 text-muted-foreground" />
+            </div>
           </Card>
         ))}
       </div>

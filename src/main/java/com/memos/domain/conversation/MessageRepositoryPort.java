@@ -20,4 +20,6 @@ public interface MessageRepositoryPort {
      * first, for use as chat history context in the RAG prompt.
      */
     List<Message> findRecentByConversationId(UUID conversationId, int limit);
+
+    long countByConversationId(UUID conversationId);
 }

@@ -1,10 +1,14 @@
 package com.memos.infrastructure.persistence.entity;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import com.memos.domain.ai.AiProvider;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -46,6 +50,11 @@ public class ConversationEntity {
 
     @Column(length = 100)
     private String model;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "document_scope", columnDefinition = "jsonb", nullable = false)
+    @Builder.Default
+    private List<UUID> documentScope = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

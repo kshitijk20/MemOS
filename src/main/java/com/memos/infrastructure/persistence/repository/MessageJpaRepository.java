@@ -21,4 +21,6 @@ public interface MessageJpaRepository extends JpaRepository<MessageEntity, UUID>
             ORDER BY m.createdAt DESC
             """)
     List<MessageEntity> findRecentByConversationId(@Param("conversationId") UUID conversationId, Pageable pageable);
+
+    long countByConversationId(UUID conversationId);
 }

@@ -1,37 +1,76 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, RotateCcw } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MessageBubble } from '@/components/MessageBubble'
 import { ChatInput } from '@/components/ChatInput'
-import { useConversationQuery, useMessagesQuery, useSendMessageMutation } from '@/hooks/useConversations'
+import { ConversationScopeControl } from '@/components/ConversationScopeControl'
+import { useConversationQuery, useMessagesQuery } from '@/hooks/useConversations'
+import { streamMessage } from '@/api/conversations'
 import { extractErrorMessage } from '@/api/client'
 
 export function ConversationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const conversationId = id!
 
+  const queryClient = useQueryClient()
   const { data: conversation, isLoading: isConversationLoading } = useConversationQuery(conversationId)
   const { data: messagesPage, isLoading: isMessagesLoading } = useMessagesQuery(conversationId)
-  const sendMutation = useSendMessageMutation(conversationId)
 
   const [pendingContent, setPendingContent] = useState<string | null>(null)
+  const [streamingContent, setStreamingContent] = useState<string | null>(null)
+  const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const tokenBufferRef = useRef('')
+  const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messagesPage, pendingContent, sendMutation.isPending])
+  }, [messagesPage, pendingContent, streamingContent])
 
   async function handleSend(content: string) {
     setError(null)
     setPendingContent(content)
+    setStreamingContent('')
+    setIsStreaming(true)
+    tokenBufferRef.current = ''
+
     try {
-      await sendMutation.mutateAsync({ content })
+      const done = await streamMessage(conversationId, content, (token) => {
+        tokenBufferRef.current += token
+        if (rafRef.current === null) {
+          rafRef.current = requestAnimationFrame(() => {
+            setStreamingContent((prev) => (prev ?? '') + tokenBufferRef.current)
+            tokenBufferRef.current = ''
+            rafRef.current = null
+          })
+        }
+      })
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      tokenBufferRef.current = ''
       setPendingContent(null)
+      setStreamingContent(null)
+      setIsStreaming(false)
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
+      if (done.conversationTitle) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        queryClient.invalidateQueries({ queryKey: ['conversations', conversationId] })
+      }
     } catch (err) {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      tokenBufferRef.current = ''
+      setStreamingContent(null)
+      setIsStreaming(false)
       setError(extractErrorMessage(err))
     }
   }
@@ -54,10 +93,13 @@ export function ConversationDetailPage() {
         {isConversationLoading ? (
           <Skeleton className="h-6 w-48" />
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold">{conversation?.title ?? 'Untitled conversation'}</h1>
             <Badge variant="secondary">{conversation?.provider}</Badge>
-            <span className="text-xs text-muted-foreground">{conversation?.model}</span>
+            {conversation?.model && (
+              <span className="text-xs text-muted-foreground">{conversation.model}</span>
+            )}
+            {conversation && <ConversationScopeControl conversation={conversation} />}
           </div>
         )}
       </div>
@@ -87,7 +129,11 @@ export function ConversationDetailPage() {
             {pendingContent && (
               <MessageBubble role="USER" content={pendingContent} />
             )}
-            {sendMutation.isPending && <MessageBubble role="ASSISTANT" content="" pending />}
+            {isStreaming && (
+              streamingContent
+                ? <MessageBubble role="ASSISTANT" content={streamingContent} streaming />
+                : <MessageBubble role="ASSISTANT" content="" pending />
+            )}
           </>
         )}
         <div ref={scrollRef} />
@@ -103,7 +149,7 @@ export function ConversationDetailPage() {
         </div>
       )}
 
-      <ChatInput onSend={handleSend} disabled={sendMutation.isPending} />
+      <ChatInput onSend={handleSend} disabled={isStreaming} />
     </div>
   )
 }

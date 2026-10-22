@@ -49,7 +49,7 @@ export interface RefreshRequest {
 
 // --- Documents ---
 
-export type DocumentSourceType = 'PDF' | 'MARKDOWN' | 'GIT_REPOSITORY'
+export type DocumentSourceType = 'PDF' | 'MARKDOWN' | 'GIT_REPOSITORY' | 'WEB_PAGE'
 export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 
 export interface DocumentResponse {
@@ -59,6 +59,7 @@ export interface DocumentResponse {
   sourceUri: string
   status: DocumentStatus
   errorMessage: string | null
+  version: number
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
@@ -73,10 +74,42 @@ export interface DocumentChunkResponse {
   createdAt: string
 }
 
+export interface DocumentChunkSourceResponse {
+  id: string
+  documentId: string
+  chunkIndex: number
+  content: string
+  tokenCount: number
+  metadata: Record<string, unknown>
+  createdAt: string
+  documentTitle: string
+  sourceUri: string
+  sourceType: DocumentSourceType
+}
+
+export interface UserProfileResponse {
+  id: string
+  email: string
+  fullName: string
+  role: UserRole
+}
+
+export interface UpdateProfileRequest {
+  fullName: string
+  email: string
+  currentPassword?: string
+  newPassword?: string
+}
+
 export interface GitIngestRequest {
   repoUrl: string
   title: string
   branch?: string
+}
+
+export interface UrlIngestRequest {
+  title: string
+  url: string
 }
 
 // --- Conversations ---
@@ -88,6 +121,7 @@ export interface ConversationResponse {
   title: string | null
   provider: AiProvider
   model: string
+  documentScope: string[]
   createdAt: string
   updatedAt: string
 }
@@ -96,6 +130,7 @@ export interface CreateConversationRequest {
   title?: string
   provider?: AiProvider
   model?: string
+  documentIds?: string[]
 }
 
 export type MessageRole = 'USER' | 'ASSISTANT' | 'SYSTEM'
@@ -119,3 +154,10 @@ export interface MessageResponse {
 export interface SendMessageRequest {
   content: string
 }
+
+// --- Streaming ---
+
+export type StreamEvent =
+  | { type: 'token'; content: string }
+  | { type: 'done'; message: MessageResponse; conversationTitle: string | null }
+  | { type: 'error'; message: string }

@@ -10,6 +10,7 @@ interface MessageBubbleProps {
   citations?: Citation[]
   createdAt?: string
   pending?: boolean
+  streaming?: boolean
 }
 
 const markdownComponents = {
@@ -27,7 +28,7 @@ const markdownComponents = {
   blockquote: ({ ...props }) => <blockquote className="border-l-2 pl-2 italic opacity-90" {...props} />,
 }
 
-export function MessageBubble({ role, content, citations = [], createdAt, pending }: MessageBubbleProps) {
+export function MessageBubble({ role, content, citations = [], createdAt, pending, streaming }: MessageBubbleProps) {
   if (role === 'SYSTEM') {
     return <p className="text-center text-xs text-muted-foreground">{content}</p>
   }
@@ -47,6 +48,11 @@ export function MessageBubble({ role, content, citations = [], createdAt, pendin
             <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
             <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
             <span className="size-1.5 animate-bounce rounded-full bg-current" />
+          </span>
+        ) : streaming ? (
+          <span className="whitespace-pre-wrap">
+            {content}
+            <span className="inline-block h-4 w-0.5 animate-pulse bg-current align-middle ml-0.5" />
           </span>
         ) : isUser ? (
           content

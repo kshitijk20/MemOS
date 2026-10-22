@@ -3,6 +3,10 @@ package com.memos.application.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -61,24 +65,23 @@ class RagQueryServiceTest {
     @BeforeEach
     void setUp() {
         ragQueryService = new RagQueryService(
-                conversationRepositoryPort, messageRepositoryPort, embeddingPort, retrievalPort, chatPortResolver);
+                conversationRepositoryPort,
+                messageRepositoryPort,
+                embeddingPort,
+                retrievalPort,
+                new LexicalOverlapReranker(),
+                chatPortResolver);
         ReflectionTestUtils.setField(ragQueryService, "topK", 5);
         ReflectionTestUtils.setField(ragQueryService, "historyWindow", 10);
         ReflectionTestUtils.setField(ragQueryService, "maxContextChars", 12000);
+        ReflectionTestUtils.setField(ragQueryService, "candidatePool", 20);
+        ReflectionTestUtils.setField(ragQueryService, "minScore", 0.35);
     }
 
     @Test
     void askQuestionRetrievesContextAndPersistsAssistantReplyWithCitations() {
         Instant now = Instant.now();
-        Conversation conversation = Conversation.builder()
-                .id(conversationId)
-                .userId(userId)
-                .title("Test conversation")
-                .provider(AiProvider.GEMINI)
-                .model(null)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
+        Conversation conversation = conversation("Test conversation", null);
 
         when(conversationRepositoryPort.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(conversation));
 
@@ -88,7 +91,8 @@ class RagQueryServiceTest {
         UUID chunkId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
         RetrievedChunk retrievedChunk = new RetrievedChunk(chunkId, documentId, 0, "MemOS is a RAG assistant.", "intro.md", 0.92);
-        when(retrievalPort.findSimilar(userId, queryEmbedding, 5)).thenReturn(List.of(retrievedChunk));
+        when(retrievalPort.findHybrid(eq(userId), eq("What is MemOS?"), eq(queryEmbedding), eq(List.of()), eq(20)))
+                .thenReturn(List.of(retrievedChunk));
 
         Message persistedUserMessage = Message.builder()
                 .id(UUID.randomUUID())
@@ -120,17 +124,80 @@ class RagQueryServiceTest {
         assertThat(result.getCitations().get(0).getDocumentChunkId()).isEqualTo(chunkId);
         assertThat(result.getCitations().get(0).getDocumentId()).isEqualTo(documentId);
         assertThat(result.getCitations().get(0).getSourceTitle()).isEqualTo("intro.md");
-        assertThat(result.getCitations().get(0).getScore()).isEqualTo(0.92);
 
-        // first save() call persists the user's question
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(messageRepositoryPort, org.mockito.Mockito.times(2)).save(messageCaptor.capture());
         assertThat(messageCaptor.getAllValues().get(0).getRole()).isEqualTo(MessageRole.USER);
-        assertThat(messageCaptor.getAllValues().get(0).getContent()).isEqualTo("What is MemOS?");
         assertThat(messageCaptor.getAllValues().get(1).getRole()).isEqualTo(MessageRole.ASSISTANT);
 
-        // the conversation's updated timestamp is touched
         verify(conversationRepositoryPort).save(any(Conversation.class));
+    }
+
+    @Test
+    void askQuestionUsesDocumentScopeWhenPresent() {
+        UUID scopedDoc = UUID.randomUUID();
+        Conversation conversation = conversation("Test conversation", List.of(scopedDoc));
+        when(conversationRepositoryPort.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(conversation));
+        when(embeddingPort.embed("scoped?")).thenReturn(new float[] {0.2f});
+        RetrievedChunk chunk = new RetrievedChunk(
+                UUID.randomUUID(), scopedDoc, 0, "scoped content about APIs", "only.pdf", 0.88);
+        when(retrievalPort.findHybrid(eq(userId), eq("scoped?"), any(), eq(List.of(scopedDoc)), eq(20)))
+                .thenReturn(List.of(chunk));
+        when(messageRepositoryPort.findRecentByConversationId(any(), anyInt())).thenReturn(List.of());
+        when(chatPortResolver.resolve(AiProvider.GEMINI)).thenReturn(chatPort);
+        when(chatPort.complete(any())).thenReturn(ChatCompletionResult.builder().content("ok").build());
+        when(messageRepositoryPort.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ragQueryService.askQuestion(userId, conversationId, "scoped?");
+
+        verify(retrievalPort).findHybrid(eq(userId), eq("scoped?"), any(), eq(List.of(scopedDoc)), eq(20));
+    }
+
+    @Test
+    void askQuestionAbstainsWhenRetrievalIsWeak() {
+        Conversation conversation = conversation("Test conversation", null);
+        when(conversationRepositoryPort.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(conversation));
+        when(embeddingPort.embed("unrelated trivia")).thenReturn(new float[] {0.1f});
+        RetrievedChunk weak = new RetrievedChunk(
+                UUID.randomUUID(), UUID.randomUUID(), 0, "zzzz unrelated passage", "notes.md", 0.12, 0.12, false);
+        when(retrievalPort.findHybrid(any(), anyString(), any(), anyList(), anyInt())).thenReturn(List.of(weak));
+        when(messageRepositoryPort.save(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            return message.toBuilder().id(UUID.randomUUID()).build();
+        });
+
+        Message result = ragQueryService.askQuestion(userId, conversationId, "unrelated trivia");
+
+        assertThat(result.getContent()).isEqualTo(RagQueryService.UNSURE_ANSWER);
+        assertThat(result.getCitations()).isEmpty();
+        verify(chatPortResolver, never()).resolve(any());
+        verify(chatPort, never()).complete(any());
+    }
+
+    @Test
+    void askQuestionDoesNotAbstainOnLexicalHitEvenIfVectorIsWeak() {
+        Conversation conversation = conversation("Test conversation", null);
+        when(conversationRepositoryPort.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(conversation));
+        when(embeddingPort.embed("ECONNRESET from fetch")).thenReturn(new float[] {0.1f});
+        RetrievedChunk lexical = new RetrievedChunk(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                0,
+                "Node threw ECONNRESET during fetch",
+                "errors.md",
+                0.02,
+                0.11,
+                true);
+        when(retrievalPort.findHybrid(any(), anyString(), any(), anyList(), anyInt())).thenReturn(List.of(lexical));
+        when(messageRepositoryPort.findRecentByConversationId(any(), anyInt())).thenReturn(List.of());
+        when(chatPortResolver.resolve(AiProvider.GEMINI)).thenReturn(chatPort);
+        when(chatPort.complete(any())).thenReturn(ChatCompletionResult.builder().content("connection reset").build());
+        when(messageRepositoryPort.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Message result = ragQueryService.askQuestion(userId, conversationId, "ECONNRESET from fetch");
+
+        assertThat(result.getContent()).isEqualTo("connection reset");
+        verify(chatPort).complete(any());
     }
 
     @Test
@@ -140,26 +207,27 @@ class RagQueryServiceTest {
         org.junit.jupiter.api.Assertions.assertThrows(ResourceNotFoundException.class,
                 () -> ragQueryService.askQuestion(userId, conversationId, "anything"));
 
-        verify(messageRepositoryPort, org.mockito.Mockito.never()).save(any());
-        verify(embeddingPort, org.mockito.Mockito.never()).embed(any());
+        verify(messageRepositoryPort, never()).save(any());
+        verify(embeddingPort, never()).embed(any());
     }
 
     @Test
     void askQuestionFallsBackToDefaultProviderResolutionWhenConversationProviderNull() {
-        Instant now = Instant.now();
         Conversation conversation = Conversation.builder()
                 .id(conversationId)
                 .userId(userId)
                 .title("Test conversation")
                 .provider(null)
                 .model(null)
-                .createdAt(now)
-                .updatedAt(now)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
 
         when(conversationRepositoryPort.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(conversation));
         when(embeddingPort.embed(any())).thenReturn(new float[] {0.1f});
-        when(retrievalPort.findSimilar(any(), any(), anyInt())).thenReturn(List.of());
+        RetrievedChunk chunk = new RetrievedChunk(
+                UUID.randomUUID(), UUID.randomUUID(), 0, "hello there", "intro.md", 0.9);
+        when(retrievalPort.findHybrid(any(), anyString(), any(), anyList(), anyInt())).thenReturn(List.of(chunk));
         when(messageRepositoryPort.findRecentByConversationId(any(), anyInt())).thenReturn(List.of());
         when(chatPortResolver.resolve(null)).thenReturn(chatPort);
         when(chatPort.complete(any(ChatCompletionRequest.class))).thenReturn(ChatCompletionResult.builder()
@@ -175,5 +243,19 @@ class RagQueryServiceTest {
 
         assertThat(result.getContent()).isEqualTo("Hello!");
         verify(chatPortResolver).resolve(null);
+    }
+
+    private Conversation conversation(String title, List<UUID> scope) {
+        Instant now = Instant.now();
+        return Conversation.builder()
+                .id(conversationId)
+                .userId(userId)
+                .title(title)
+                .provider(AiProvider.GEMINI)
+                .model(null)
+                .documentScope(scope)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
     }
 }

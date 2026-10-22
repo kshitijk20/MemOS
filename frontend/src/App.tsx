@@ -1,5 +1,6 @@
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
+import { ThemeProvider } from 'next-themes'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query-client'
 import { AuthProvider } from '@/lib/auth-context'
@@ -11,10 +12,13 @@ import { RegisterPage } from '@/pages/RegisterPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
 import { ConversationsPage } from '@/pages/ConversationsPage'
 import { ConversationDetailPage } from '@/pages/ConversationDetailPage'
+import { SettingsPage } from '@/pages/SettingsPage'
+import { DashboardPage } from '@/pages/DashboardPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 
 function App() {
   return (
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
@@ -24,10 +28,12 @@ function App() {
               <Route path="/register" element={<RegisterPage />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
-                  <Route path="/" element={<Navigate to="/documents" replace />} />
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/documents" element={<DocumentsPage />} />
                   <Route path="/conversations" element={<ConversationsPage />} />
                   <Route path="/conversations/:id" element={<ConversationDetailPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
                 </Route>
               </Route>
               <Route path="*" element={<NotFoundPage />} />
@@ -37,6 +43,7 @@ function App() {
         <Toaster />
       </QueryClientProvider>
     </ErrorBoundary>
+    </ThemeProvider>
   )
 }
 

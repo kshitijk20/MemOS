@@ -1,6 +1,7 @@
 package com.memos.web.conversation;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import com.memos.domain.ai.AiProvider;
@@ -11,6 +12,7 @@ public record ConversationResponse(
         String title,
         AiProvider provider,
         String model,
+        List<UUID> documentScope,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -20,6 +22,7 @@ public record ConversationResponse(
                 conversation.getTitle(),
                 conversation.getProvider(),
                 conversation.getModel(),
+                conversation.getDocumentScope() != null ? conversation.getDocumentScope() : List.of(),
                 conversation.getCreatedAt(),
                 conversation.getUpdatedAt());
     }

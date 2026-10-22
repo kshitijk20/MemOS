@@ -10,5 +10,6 @@ package com.memos.domain.document;
 public enum DocumentSourceType {
     PDF,
     MARKDOWN,
-    GIT_REPOSITORY
+    GIT_REPOSITORY,
+    WEB_PAGE
 }

@@ -1,5 +1,6 @@
 package com.memos.domain.document;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,4 +20,14 @@ public interface DocumentRepositoryPort {
     void deleteById(UUID id);
 
     boolean existsByIdAndOwnerId(UUID id, UUID ownerId);
+
+    long countByOwnerId(UUID ownerId);
+
+    long countByOwnerIdAndStatus(UUID ownerId, DocumentStatus status);
+
+    Optional<Document> findByOwnerIdAndSourceFingerprint(UUID ownerId, String sourceFingerprint);
+
+    List<Document> findAllByStatus(DocumentStatus status);
+
+    List<Document> findAllBySourceFingerprintIsNull();
 }

@@ -71,6 +71,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userFromTokens(tokens, fullName))
   }
 
+  function updateUser(patch: Partial<AuthUser>) {
+    setUser((u) => (u ? { ...u, ...patch } : null))
+  }
+
   async function logout() {
     const refreshToken = getRefreshToken()
     if (refreshToken) {
@@ -86,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, isLoading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

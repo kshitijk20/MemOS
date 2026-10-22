@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useCreateConversationMutation } from '@/hooks/useConversations'
+import { useDocumentsQuery } from '@/hooks/useDocuments'
+import { DocumentScopePicker } from '@/components/DocumentScopePicker'
 import type { AiProvider } from '@/api/types'
 
 const PROVIDERS: AiProvider[] = ['GEMINI', 'OPENAI', 'CLAUDE']
@@ -33,12 +35,17 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
   const [title, setTitle] = useState('')
   const [provider, setProvider] = useState<AiProvider>('GEMINI')
   const [model, setModel] = useState('')
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
   const createMutation = useCreateConversationMutation()
+  const { data: docsPage } = useDocumentsQuery(0, 50)
+
+  const readyDocs = docsPage?.items.filter((d) => d.status === 'COMPLETED') ?? []
 
   function resetAndClose() {
     setTitle('')
     setProvider('GEMINI')
     setModel('')
+    setSelectedDocIds([])
     onOpenChange(false)
   }
 
@@ -49,17 +56,18 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
         title: title.trim() === '' ? undefined : title.trim(),
         provider,
         model: model.trim() === '' ? undefined : model.trim(),
+        documentIds: selectedDocIds.length > 0 ? selectedDocIds : undefined,
       })
       resetAndClose()
       navigate(`/conversations/${conversation.id}`)
     } catch {
-      // error toast is shown by the mutation; keep dialog open for retry
+      // error toast shown by mutation
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(next) : resetAndClose())}>
-      <DialogContent>
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>New conversation</DialogTitle>
           <DialogDescription>Start a new conversation with an AI provider.</DialogDescription>
@@ -98,7 +106,27 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
               placeholder="Uses server default if left blank"
             />
           </div>
+
+          {readyDocs.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div>
+                <Label>Filter sources (optional)</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Pick a PDF, URL, or repo to search only that source. Leave empty to search all documents.
+                </p>
+              </div>
+              <DocumentScopePicker
+                documents={readyDocs}
+                selectedIds={selectedDocIds}
+                onChange={setSelectedDocIds}
+              />
+            </div>
+          )}
+
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={resetAndClose}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? 'Creating…' : 'Create'}
             </Button>

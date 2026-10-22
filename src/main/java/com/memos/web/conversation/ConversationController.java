@@ -1,19 +1,28 @@
 package com.memos.web.conversation;
 
+import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.security.concurrent.DelegatingSecurityContextRunnable;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.memos.application.conversation.ConversationApplicationService;
 import com.memos.application.rag.RagQueryService;
@@ -37,6 +46,7 @@ public class ConversationController {
 
     private final ConversationApplicationService conversationApplicationService;
     private final RagQueryService ragQueryService;
+    private final ObjectMapper objectMapper;
 
     @PostMapping
     public ResponseEntity<ConversationResponse> create(
@@ -44,7 +54,7 @@ public class ConversationController {
             @Valid @RequestBody CreateConversationRequest request) {
 
         Conversation conversation = conversationApplicationService.create(
-                principal.getId(), request.title(), request.provider(), request.model());
+                principal.getId(), request.title(), request.provider(), request.model(), request.documentIds());
         return ResponseEntity.status(HttpStatus.CREATED).body(ConversationResponse.from(conversation));
     }
 
@@ -64,6 +74,17 @@ public class ConversationController {
             @PathVariable UUID id) {
 
         Conversation conversation = conversationApplicationService.get(principal.getId(), id);
+        return ResponseEntity.ok(ConversationResponse.from(conversation));
+    }
+
+    @PatchMapping("/{id}/scope")
+    public ResponseEntity<ConversationResponse> updateScope(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id,
+            @RequestBody UpdateDocumentScopeRequest request) {
+
+        Conversation conversation = conversationApplicationService.updateDocumentScope(
+                principal.getId(), id, request == null ? List.of() : request.documentIds());
         return ResponseEntity.ok(ConversationResponse.from(conversation));
     }
 
@@ -96,4 +117,46 @@ public class ConversationController {
         Message assistantMessage = ragQueryService.askQuestion(principal.getId(), id, request.content());
         return ResponseEntity.status(HttpStatus.CREATED).body(MessageResponse.from(assistantMessage));
     }
+
+    @PostMapping(value = "/{id}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamMessage(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateMessageRequest request) {
+
+        SseEmitter emitter = new SseEmitter(120_000L);
+        UUID userId = principal.getId();
+        String content = request.content();
+
+        Thread.ofVirtual().start(new DelegatingSecurityContextRunnable(() -> {
+            try {
+                RagQueryService.StreamResult result = ragQueryService.streamQuestion(
+                        userId, id, content,
+                        token -> {
+                            try {
+                                emitter.send(SseEmitter.event()
+                                        .data("{\"type\":\"token\",\"content\":" + objectMapper.writeValueAsString(token) + "}"));
+                            } catch (IOException e) {
+                                emitter.completeWithError(e);
+                            }
+                        });
+
+                SseDoneEvent done = new SseDoneEvent("done",
+                        MessageResponse.from(result.assistantMessage()),
+                        result.generatedTitle());
+                emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(done)));
+                emitter.complete();
+            } catch (Exception e) {
+                try {
+                    emitter.send(SseEmitter.event()
+                            .data("{\"type\":\"error\",\"message\":" + objectMapper.writeValueAsString(e.getMessage()) + "}"));
+                } catch (IOException ignored) {}
+                emitter.completeWithError(e);
+            }
+        }, SecurityContextHolder.getContext()));
+
+        return emitter;
+    }
+
+    private record SseDoneEvent(String type, MessageResponse message, String conversationTitle) {}
 }

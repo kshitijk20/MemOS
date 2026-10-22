@@ -1,11 +1,16 @@
 package com.memos.application.ingestion;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +20,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,6 +32,7 @@ import com.memos.domain.document.DocumentChunkRepositoryPort;
 import com.memos.domain.document.DocumentRepositoryPort;
 import com.memos.domain.document.DocumentSourceType;
 import com.memos.domain.document.DocumentStatus;
+import com.memos.domain.exception.DuplicateResourceException;
 import com.memos.domain.exception.IngestionException;
 import com.memos.infrastructure.ingestion.parser.DocumentParserRegistry;
 
@@ -50,23 +57,34 @@ class DocumentIngestionServiceTest {
     @Mock
     private DocumentParserPort parserPort;
 
+    @Mock
+    private IngestionProgressStore progressStore;
+
+    @TempDir
+    Path tempDir;
+
     private DocumentIngestionService ingestionService;
 
     @BeforeEach
     void setUp() {
         ingestionService = new DocumentIngestionService(
-                documentRepositoryPort, documentChunkRepositoryPort, parserRegistry, chunkingPort, embeddingPort);
+                documentRepositoryPort, documentChunkRepositoryPort, parserRegistry, chunkingPort, embeddingPort,
+                progressStore);
     }
 
-    private Document pendingDocument(UUID id) {
+    private Document pendingDocument(UUID id) throws IOException {
+        Path source = Files.createTempFile(tempDir, "memos-upload-", ".md");
+        Files.writeString(source, "sample");
         Instant now = Instant.now();
         return Document.builder()
                 .id(id)
                 .ownerId(UUID.randomUUID())
                 .title("Sample doc")
                 .sourceType(DocumentSourceType.MARKDOWN)
-                .sourceUri("/tmp/sample.md")
+                .sourceUri(source.toString())
+                .sourceFingerprint("abc")
                 .status(DocumentStatus.PENDING)
+                .version(1)
                 .metadata(Map.of())
                 .createdAt(now)
                 .updatedAt(now)
@@ -76,16 +94,42 @@ class DocumentIngestionServiceTest {
     @Test
     void submitCreatesPendingDocument() {
         when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentRepositoryPort.findByOwnerIdAndSourceFingerprint(any(), any())).thenReturn(Optional.empty());
 
-        Document result = ingestionService.submit(UUID.randomUUID(), "Sample doc", DocumentSourceType.MARKDOWN, "/tmp/sample.md", Map.of());
+        Document result = ingestionService.submit(
+                UUID.randomUUID(), "Sample doc", DocumentSourceType.MARKDOWN, "/tmp/sample.md", "fp", Map.of());
 
         assertThat(result.getStatus()).isEqualTo(DocumentStatus.PENDING);
         assertThat(result.getTitle()).isEqualTo("Sample doc");
-        assertThat(result.getSourceType()).isEqualTo(DocumentSourceType.MARKDOWN);
+        assertThat(result.getSourceFingerprint()).isEqualTo("fp");
+        assertThat(result.getVersion()).isEqualTo(1);
     }
 
     @Test
-    void ingestParsesChunksEmbedsAndCompletes() {
+    void submitRejectsDuplicateFingerprint() {
+        UUID ownerId = UUID.randomUUID();
+        Document existing = Document.builder()
+                .id(UUID.randomUUID())
+                .ownerId(ownerId)
+                .title("Already there")
+                .sourceType(DocumentSourceType.WEB_PAGE)
+                .sourceUri("https://example.com")
+                .sourceFingerprint("fp")
+                .status(DocumentStatus.COMPLETED)
+                .metadata(Map.of())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        when(documentRepositoryPort.findByOwnerIdAndSourceFingerprint(ownerId, "fp")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> ingestionService.submit(
+                ownerId, "New", DocumentSourceType.WEB_PAGE, "https://example.com", "fp", Map.of()))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageContaining("Already there");
+    }
+
+    @Test
+    void ingestParsesChunksEmbedsAndCompletes() throws IOException {
         UUID documentId = UUID.randomUUID();
         Document document = pendingDocument(documentId);
 
@@ -108,6 +152,8 @@ class DocumentIngestionServiceTest {
 
         ingestionService.ingest(documentId);
 
+        verify(documentChunkRepositoryPort).deleteByDocumentId(documentId);
+
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<DocumentChunk>> chunksCaptor = ArgumentCaptor.forClass(List.class);
         verify(documentChunkRepositoryPort).saveAll(chunksCaptor.capture());
@@ -127,7 +173,7 @@ class DocumentIngestionServiceTest {
     }
 
     @Test
-    void ingestMarksDocumentFailedOnParserError() {
+    void ingestMarksDocumentFailedOnParserError() throws IOException {
         UUID documentId = UUID.randomUUID();
         Document document = pendingDocument(documentId);
 
@@ -153,6 +199,48 @@ class DocumentIngestionServiceTest {
 
         ingestionService.ingest(documentId);
 
-        verify(documentRepositoryPort, org.mockito.Mockito.never()).save(any());
+        verify(documentRepositoryPort, never()).save(any());
+    }
+
+    @Test
+    void recoverInterruptedIngestionMarksProcessingFailed() {
+        Instant now = Instant.now();
+        Document stuck = Document.builder()
+                .id(UUID.randomUUID())
+                .ownerId(UUID.randomUUID())
+                .title("Stuck")
+                .sourceType(DocumentSourceType.WEB_PAGE)
+                .sourceUri("https://example.com")
+                .status(DocumentStatus.PROCESSING)
+                .metadata(Map.of())
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        when(documentRepositoryPort.findAllBySourceFingerprintIsNull()).thenReturn(List.of());
+        when(documentRepositoryPort.findAllByStatus(DocumentStatus.PROCESSING)).thenReturn(List.of(stuck));
+        when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ingestionService.recoverInterruptedIngestion();
+
+        ArgumentCaptor<Document> captor = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepositoryPort).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(captor.getValue().getErrorMessage()).isEqualTo(DocumentIngestionService.INTERRUPTED_MESSAGE);
+    }
+
+    @Test
+    void reingestIncrementsVersion() throws IOException {
+        Document completed = pendingDocument(UUID.randomUUID()).toBuilder()
+                .status(DocumentStatus.COMPLETED)
+                .version(1)
+                .build();
+        when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Document result = ingestionService.reingest(completed);
+
+        assertThat(result.getStatus()).isEqualTo(DocumentStatus.PENDING);
+        assertThat(result.getVersion()).isEqualTo(2);
+        verify(documentRepositoryPort).save(any(Document.class));
     }
 }

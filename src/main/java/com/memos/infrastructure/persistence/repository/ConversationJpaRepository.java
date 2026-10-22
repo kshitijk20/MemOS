@@ -16,4 +16,6 @@ public interface ConversationJpaRepository extends JpaRepository<ConversationEnt
     Page<ConversationEntity> findAllByUserId(UUID userId, Pageable pageable);
 
     boolean existsByIdAndUserId(UUID id, UUID userId);
+
+    long countByUserId(UUID userId);
 }

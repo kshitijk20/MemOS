@@ -119,6 +119,38 @@ class DocumentChunkRepositoryAdapterIT {
         assertThat(documentChunkRepositoryPort.countByDocumentId(documentId)).isZero();
     }
 
+    @Test
+    void findHybridRanksKeywordMatchesForErrorCodes() {
+        UUID ownerId = createUser("hybrid-owner@example.com");
+        UUID documentId = createDocument(ownerId, DocumentStatus.COMPLETED);
+
+        documentChunkRepositoryPort.saveAll(List.of(
+                chunk(documentId, 0, "matching semantic text", unitVector(0)),
+                chunk(documentId, 1, "the socket failed with ECONNRESET during handshake", unitVector(5))));
+
+        List<RetrievedChunk> results = retrievalPort.findHybrid(
+                ownerId, "ECONNRESET during handshake", unitVector(0), List.of(), 10);
+
+        assertThat(results).extracting(RetrievedChunk::content)
+                .anyMatch(content -> content.contains("ECONNRESET"));
+        assertThat(results.stream().filter(RetrievedChunk::lexicalHit))
+                .anyMatch(chunk -> chunk.content().contains("ECONNRESET"));
+    }
+
+    @Test
+    void findByIdAndDocumentIdReturnsOwnedChunk() {
+        UUID ownerId = createUser("chunk-get-owner@example.com");
+        UUID documentId = createDocument(ownerId, DocumentStatus.COMPLETED);
+        DocumentChunk saved = documentChunkRepositoryPort.save(chunk(documentId, 0, "look me up", unitVector(0)));
+
+        assertThat(documentChunkRepositoryPort.findByIdAndDocumentId(saved.getId(), documentId))
+                .isPresent()
+                .get()
+                .extracting(DocumentChunk::getContent)
+                .isEqualTo("look me up");
+        assertThat(documentChunkRepositoryPort.findByIdAndDocumentId(saved.getId(), UUID.randomUUID())).isEmpty();
+    }
+
     private UUID createUser(String email) {
         Instant now = Instant.now();
         UserEntity user = userJpaRepository.save(UserEntity.builder()

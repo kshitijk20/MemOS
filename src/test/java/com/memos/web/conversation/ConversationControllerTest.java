@@ -7,6 +7,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -91,7 +92,7 @@ class ConversationControllerTest {
     @Test
     void createReturnsCreatedConversation() throws Exception {
         UUID conversationId = UUID.randomUUID();
-        when(conversationApplicationService.create(eq(userId), eq("My chat"), eq(AiProvider.GEMINI), any()))
+        when(conversationApplicationService.create(eq(userId), eq("My chat"), eq(AiProvider.GEMINI), any(), any()))
                 .thenReturn(conversation(conversationId));
 
         mockMvc.perform(post("/api/v1/conversations")
@@ -136,6 +137,25 @@ class ConversationControllerTest {
 
         mockMvc.perform(get("/api/v1/conversations/{id}", conversationId).with(asUser()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void updateScopeChangesDocumentFilter() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        Conversation updated = conversation(conversationId).toBuilder()
+                .documentScope(List.of(documentId))
+                .build();
+        when(conversationApplicationService.updateDocumentScope(eq(userId), eq(conversationId), eq(List.of(documentId))))
+                .thenReturn(updated);
+
+        mockMvc.perform(patch("/api/v1/conversations/{id}/scope", conversationId)
+                        .with(asUser())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"documentIds\":[\"" + documentId + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentScope[0]").value(documentId.toString()));
     }
 
     @Test

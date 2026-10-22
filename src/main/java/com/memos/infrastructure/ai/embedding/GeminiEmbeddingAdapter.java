@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import com.memos.domain.ai.EmbeddingPort;
 import com.memos.domain.exception.AiProviderException;
+import com.memos.domain.exception.ProviderErrorMessages;
 import com.memos.infrastructure.ai.config.AiProvidersProperties;
 
 import io.micrometer.observation.ObservationRegistry;
@@ -71,7 +72,7 @@ public class GeminiEmbeddingAdapter implements EmbeddingPort {
         try {
             return embeddingModel.embed(text);
         } catch (Exception e) {
-            throw new AiProviderException("Embedding request failed: " + e.getMessage(), e);
+            throw new AiProviderException(ProviderErrorMessages.forEmbedding(e), e);
         }
     }
 
@@ -104,7 +105,7 @@ public class GeminiEmbeddingAdapter implements EmbeddingPort {
         try {
             return embeddingModel.embed(texts);
         } catch (Exception e) {
-            throw new AiProviderException("Batch embedding request failed: " + e.getMessage(), e);
+            throw new AiProviderException(ProviderErrorMessages.forEmbedding(e), e);
         }
     }
 

@@ -2,6 +2,7 @@ package com.memos.web.document;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -28,6 +29,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.memos.application.ingestion.DocumentIngestionService;
+import com.memos.application.ingestion.IngestionProgressStore;
 import com.memos.domain.common.PageRequest;
 import com.memos.domain.common.PageResult;
 import com.memos.domain.document.Document;
@@ -57,6 +59,9 @@ class DocumentControllerTest {
 
     @MockitoBean
     private DocumentChunkRepositoryPort documentChunkRepositoryPort;
+
+    @MockitoBean
+    private IngestionProgressStore progressStore;
 
     @MockitoBean
     private JwtService jwtService;
@@ -101,7 +106,7 @@ class DocumentControllerTest {
         UUID documentId = UUID.randomUUID();
         Document pending = document(documentId, DocumentStatus.PENDING);
 
-        when(documentIngestionService.submit(eq(userId), eq("My Notes"), eq(DocumentSourceType.MARKDOWN), any(), any()))
+        when(documentIngestionService.submit(eq(userId), eq("My Notes"), eq(DocumentSourceType.MARKDOWN), any(), any(), any()))
                 .thenReturn(pending);
 
         MockMultipartFile file = new MockMultipartFile("file", "notes.md", "text/markdown", "# Hello".getBytes());
@@ -136,7 +141,7 @@ class DocumentControllerTest {
                 .sourceUri("https://github.com/example/repo.git")
                 .build();
 
-        when(documentIngestionService.submit(eq(userId), eq("Example Repo"), eq(DocumentSourceType.GIT_REPOSITORY), any(), any()))
+        when(documentIngestionService.submit(eq(userId), eq("Example Repo"), eq(DocumentSourceType.GIT_REPOSITORY), any(), any(), any()))
                 .thenReturn(pending);
 
         mockMvc.perform(post("/api/v1/documents/git")
@@ -214,12 +219,102 @@ class DocumentControllerTest {
     }
 
     @Test
+    void getChunkReturnsSourceForOwnedDocument() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        UUID chunkId = UUID.randomUUID();
+        Document doc = document(documentId, DocumentStatus.COMPLETED).toBuilder()
+                .sourceType(DocumentSourceType.WEB_PAGE)
+                .sourceUri("https://example.com/page")
+                .title("Example page")
+                .build();
+        DocumentChunk chunk = DocumentChunk.builder()
+                .id(chunkId)
+                .documentId(documentId)
+                .chunkIndex(2)
+                .content("full chunk text")
+                .embedding(new float[] {0.1f})
+                .tokenCount(3)
+                .metadata(Map.of("path", "README.md"))
+                .createdAt(Instant.now())
+                .build();
+
+        when(documentRepositoryPort.findByIdAndOwnerId(documentId, userId)).thenReturn(Optional.of(doc));
+        when(documentChunkRepositoryPort.findByIdAndDocumentId(chunkId, documentId)).thenReturn(Optional.of(chunk));
+
+        mockMvc.perform(get("/api/v1/documents/{id}/chunks/{chunkId}", documentId, chunkId).with(asUser()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("full chunk text"))
+                .andExpect(jsonPath("$.chunkIndex").value(2))
+                .andExpect(jsonPath("$.documentTitle").value("Example page"))
+                .andExpect(jsonPath("$.sourceUri").value("https://example.com/page"))
+                .andExpect(jsonPath("$.sourceType").value("WEB_PAGE"));
+    }
+
+    @Test
     void chunksReturnsNotFoundWhenDocumentNotOwned() throws Exception {
         UUID documentId = UUID.randomUUID();
         when(documentRepositoryPort.existsByIdAndOwnerId(documentId, userId)).thenReturn(false);
 
         mockMvc.perform(get("/api/v1/documents/{id}/chunks", documentId).with(asUser()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void ingestUrlStartsIngestion() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        Document pending = document(documentId, DocumentStatus.PENDING).toBuilder()
+                .sourceType(DocumentSourceType.WEB_PAGE)
+                .sourceUri("https://example.com/page")
+                .build();
+
+        when(documentIngestionService.submit(eq(userId), eq("Example"), eq(DocumentSourceType.WEB_PAGE), any(), any(), any()))
+                .thenReturn(pending);
+
+        mockMvc.perform(post("/api/v1/documents/url")
+                        .with(asUser())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"url":"https://example.com/page","title":"Example"}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.sourceType").value("WEB_PAGE"));
+    }
+
+    @Test
+    void retryFailedDocument() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        Document failed = document(documentId, DocumentStatus.FAILED);
+        Document pending = document(documentId, DocumentStatus.PENDING);
+
+        when(documentRepositoryPort.findByIdAndOwnerId(documentId, userId)).thenReturn(Optional.of(failed));
+        when(documentIngestionService.retry(failed)).thenReturn(pending);
+
+        mockMvc.perform(post("/api/v1/documents/{id}/retry", documentId).with(asUser()).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        verify(documentIngestionService).ingest(documentId);
+    }
+
+    @Test
+    void reingestCompletedUrlDocument() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        Document completed = document(documentId, DocumentStatus.COMPLETED).toBuilder()
+                .sourceType(DocumentSourceType.WEB_PAGE)
+                .sourceUri("https://example.com/page")
+                .version(1)
+                .build();
+        Document pending = completed.toBuilder().status(DocumentStatus.PENDING).version(2).build();
+
+        when(documentRepositoryPort.findByIdAndOwnerId(documentId, userId)).thenReturn(Optional.of(completed));
+        when(documentIngestionService.reingest(completed)).thenReturn(pending);
+
+        mockMvc.perform(post("/api/v1/documents/{id}/reingest", documentId).with(asUser()).with(csrf()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.version").value(2));
+
+        verify(documentIngestionService).ingest(documentId);
     }
 
     @Test

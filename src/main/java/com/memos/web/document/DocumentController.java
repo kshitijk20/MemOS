@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.memos.application.ingestion.DocumentIngestionService;
+import com.memos.application.ingestion.IngestionProgressStore;
+import com.memos.application.ingestion.SourceFingerprint;
 import com.memos.domain.common.PageRequest;
 import com.memos.domain.common.PageResult;
 import com.memos.domain.document.Document;
@@ -50,6 +52,7 @@ public class DocumentController {
     private final DocumentIngestionService documentIngestionService;
     private final DocumentRepositoryPort documentRepositoryPort;
     private final DocumentChunkRepositoryPort documentChunkRepositoryPort;
+    private final IngestionProgressStore progressStore;
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ResponseEntity<DocumentResponse> upload(
@@ -58,10 +61,32 @@ public class DocumentController {
             @RequestParam("title") String title) {
 
         DocumentSourceType sourceType = resolveSourceType(file);
-        Path tempFile = storeTempFile(file, sourceType);
+        StoredUpload stored = storeTempFile(file, sourceType);
 
         Document document = documentIngestionService.submit(
-                principal.getId(), title, sourceType, tempFile.toString(), Map.of("originalFilename", file.getOriginalFilename()));
+                principal.getId(),
+                title,
+                sourceType,
+                stored.path().toString(),
+                stored.fingerprint(),
+                Map.of("originalFilename", file.getOriginalFilename() == null ? "" : file.getOriginalFilename()));
+        documentIngestionService.ingest(document.getId());
+
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
+    }
+
+    @PostMapping("/url")
+    public ResponseEntity<DocumentResponse> ingestUrl(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @Valid @RequestBody UrlIngestRequest request) {
+
+        Document document = documentIngestionService.submit(
+                principal.getId(),
+                request.title(),
+                DocumentSourceType.WEB_PAGE,
+                request.url(),
+                SourceFingerprint.forWebPage(request.url()),
+                Map.of("url", request.url()));
         documentIngestionService.ingest(document.getId());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
@@ -78,7 +103,12 @@ public class DocumentController {
         }
 
         Document document = documentIngestionService.submit(
-                principal.getId(), request.title(), DocumentSourceType.GIT_REPOSITORY, request.repoUrl(), metadata);
+                principal.getId(),
+                request.title(),
+                DocumentSourceType.GIT_REPOSITORY,
+                request.repoUrl(),
+                SourceFingerprint.forGit(request.repoUrl(), request.branch()),
+                metadata);
         documentIngestionService.ingest(document.getId());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
@@ -120,6 +150,90 @@ public class DocumentController {
         return ResponseEntity.ok(PageResponse.of(result, DocumentChunkResponse::from));
     }
 
+    @GetMapping("/{id}/chunks/{chunkId}")
+    public ResponseEntity<DocumentChunkSourceResponse> chunk(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID chunkId) {
+
+        Document document = documentRepositoryPort.findByIdAndOwnerId(id, principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Document", id));
+        var chunk = documentChunkRepositoryPort.findByIdAndDocumentId(chunkId, id)
+                .orElseThrow(() -> new ResourceNotFoundException("DocumentChunk", chunkId));
+        return ResponseEntity.ok(DocumentChunkSourceResponse.from(chunk, document));
+    }
+
+    @GetMapping("/{id}/progress")
+    public ResponseEntity<IngestionProgressResponse> progress(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id) {
+
+        if (!documentRepositoryPort.existsByIdAndOwnerId(id, principal.getId())) {
+            throw new ResourceNotFoundException("Document", id);
+        }
+        return progressStore.get(id)
+                .map(p -> ResponseEntity.ok(new IngestionProgressResponse(p.phase(), p.processed(), p.total(), p.percentComplete())))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/retry")
+    public ResponseEntity<DocumentResponse> retry(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id) {
+
+        Document document = ownedDocument(principal.getId(), id);
+        document = documentIngestionService.retry(document);
+        documentIngestionService.ingest(document.getId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
+    }
+
+    @PostMapping("/{id}/reingest")
+    public ResponseEntity<DocumentResponse> reingest(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id) {
+
+        Document document = ownedDocument(principal.getId(), id);
+        if (document.getSourceType() == DocumentSourceType.PDF
+                || document.getSourceType() == DocumentSourceType.MARKDOWN) {
+            throw new IngestionException("Re-ingest of a file requires uploading the file again.");
+        }
+        document = documentIngestionService.reingest(document);
+        documentIngestionService.ingest(document.getId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
+    }
+
+    @PostMapping(value = "/{id}/reingest", consumes = "multipart/form-data")
+    public ResponseEntity<DocumentResponse> reingestFile(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @PathVariable UUID id,
+            @RequestPart("file") MultipartFile file) {
+
+        Document document = ownedDocument(principal.getId(), id);
+        boolean fileSource = document.getSourceType() == DocumentSourceType.PDF
+                || document.getSourceType() == DocumentSourceType.MARKDOWN;
+        if (!fileSource) {
+            throw new IngestionException("Upload a replacement file only for PDF or Markdown documents.");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new IngestionException("Re-ingest of a file requires uploading the file again.");
+        }
+        DocumentSourceType uploadedType = resolveSourceType(file);
+        if (uploadedType != document.getSourceType()) {
+            throw new IngestionException("Uploaded file type does not match this document (" + document.getSourceType() + ").");
+        }
+        StoredUpload stored = storeTempFile(file, uploadedType);
+        Map<String, Object> metadata = new HashMap<>();
+        if (document.getMetadata() != null) {
+            metadata.putAll(document.getMetadata());
+        }
+        metadata.put("originalFilename", file.getOriginalFilename() == null ? "" : file.getOriginalFilename());
+        document = documentIngestionService.replaceFileSource(
+                document, stored.path().toString(), stored.fingerprint(), metadata);
+        document = documentIngestionService.reingest(document);
+        documentIngestionService.ingest(document.getId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal CustomUserPrincipal principal,
@@ -131,6 +245,11 @@ public class DocumentController {
 
         documentRepositoryPort.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private Document ownedDocument(UUID ownerId, UUID id) {
+        return documentRepositoryPort.findByIdAndOwnerId(id, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document", id));
     }
 
     private DocumentSourceType resolveSourceType(MultipartFile file) {
@@ -146,14 +265,18 @@ public class DocumentController {
         throw new IngestionException("Unsupported file type for '" + file.getOriginalFilename() + "'. Only PDF and Markdown files are supported.");
     }
 
-    private Path storeTempFile(MultipartFile file, DocumentSourceType sourceType) {
+    private StoredUpload storeTempFile(MultipartFile file, DocumentSourceType sourceType) {
         String suffix = sourceType == DocumentSourceType.PDF ? ".pdf" : ".md";
         try {
+            byte[] bytes = file.getBytes();
             Path tempFile = Files.createTempFile("memos-upload-", suffix);
-            file.transferTo(tempFile);
-            return tempFile;
+            Files.write(tempFile, bytes);
+            return new StoredUpload(tempFile, SourceFingerprint.forFile(bytes));
         } catch (IOException | UncheckedIOException e) {
             throw new IngestionException("Failed to store uploaded file: " + e.getMessage(), e);
         }
+    }
+
+    private record StoredUpload(Path path, String fingerprint) {
     }
 }

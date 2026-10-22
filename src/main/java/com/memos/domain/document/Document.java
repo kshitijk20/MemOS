@@ -20,6 +20,9 @@ public class Document {
     private final String sourceUri;
     private final DocumentStatus status;
     private final String errorMessage;
+    private final String sourceFingerprint;
+    @Builder.Default
+    private final int version = 1;
     private final Map<String, Object> metadata;
     private final Instant createdAt;
     private final Instant updatedAt;
@@ -32,6 +35,32 @@ public class Document {
         return this.toBuilder()
                 .status(DocumentStatus.FAILED)
                 .errorMessage(message)
+                .updatedAt(Instant.now())
+                .build();
+    }
+
+    public Document resetForRetry() {
+        return this.toBuilder()
+                .status(DocumentStatus.PENDING)
+                .errorMessage(null)
+                .updatedAt(Instant.now())
+                .build();
+    }
+
+    public Document prepareForReingest() {
+        return this.toBuilder()
+                .status(DocumentStatus.PENDING)
+                .errorMessage(null)
+                .version(version + 1)
+                .updatedAt(Instant.now())
+                .build();
+    }
+
+    public Document withSource(String newSourceUri, String newFingerprint, Map<String, Object> newMetadata) {
+        return this.toBuilder()
+                .sourceUri(newSourceUri)
+                .sourceFingerprint(newFingerprint)
+                .metadata(newMetadata)
                 .updatedAt(Instant.now())
                 .build();
     }
