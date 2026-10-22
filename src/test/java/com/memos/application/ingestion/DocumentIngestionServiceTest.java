@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -148,15 +149,15 @@ class DocumentIngestionServiceTest {
         float[] embedding2 = new float[] {0.3f, 0.4f};
         when(embeddingPort.embedBatch(List.of("chunk one", "chunk two"))).thenReturn(List.of(embedding1, embedding2));
 
-        when(documentChunkRepositoryPort.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentChunkRepositoryPort.replaceForDocument(any(UUID.class), anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
 
         ingestionService.ingest(documentId);
 
-        verify(documentChunkRepositoryPort).deleteByDocumentId(documentId);
-
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<DocumentChunk>> chunksCaptor = ArgumentCaptor.forClass(List.class);
-        verify(documentChunkRepositoryPort).saveAll(chunksCaptor.capture());
+        verify(documentChunkRepositoryPort).replaceForDocument(eq(documentId), chunksCaptor.capture());
+        verify(documentChunkRepositoryPort, never()).deleteByDocumentId(any());
 
         List<DocumentChunk> savedChunks = chunksCaptor.getValue();
         assertThat(savedChunks).hasSize(2);
@@ -170,6 +171,7 @@ class DocumentIngestionServiceTest {
         verify(documentRepositoryPort, org.mockito.Mockito.atLeastOnce()).save(documentCaptor.capture());
         Document finalState = documentCaptor.getAllValues().get(documentCaptor.getAllValues().size() - 1);
         assertThat(finalState.getStatus()).isEqualTo(DocumentStatus.COMPLETED);
+        assertThat(Path.of(document.getSourceUri())).doesNotExist();
     }
 
     @Test
@@ -190,6 +192,61 @@ class DocumentIngestionServiceTest {
 
         assertThat(finalState.getStatus()).isEqualTo(DocumentStatus.FAILED);
         assertThat(finalState.getErrorMessage()).contains("boom");
+        // Kept so Retry can re-run ingestion without a new upload.
+        assertThat(Path.of(document.getSourceUri())).exists();
+    }
+
+    @Test
+    void ingestKeepsPreviousChunksWhenEmbeddingFails() throws IOException {
+        UUID documentId = UUID.randomUUID();
+        Document document = pendingDocument(documentId);
+
+        when(documentRepositoryPort.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(parserRegistry.resolve(DocumentSourceType.MARKDOWN)).thenReturn(parserPort);
+        when(parserPort.parse(any(Document.class)))
+                .thenReturn(List.of(new ParsedDocument("Sample doc", "content", Map.of())));
+        when(chunkingPort.chunk("content")).thenReturn(List.of(new TextChunk("chunk", 1, Map.of())));
+        when(embeddingPort.embedBatch(anyList())).thenThrow(new IllegalStateException("429 quota"));
+
+        ingestionService.ingest(documentId);
+
+        verify(documentChunkRepositoryPort, never()).replaceForDocument(any(), anyList());
+        verify(documentChunkRepositoryPort, never()).deleteByDocumentId(any());
+        assertThat(Path.of(document.getSourceUri())).exists();
+    }
+
+    @Test
+    void replaceFileSourceDeletesTheUploadItReplaces() throws IOException {
+        Document failed = pendingDocument(UUID.randomUUID()).toBuilder().status(DocumentStatus.FAILED).build();
+        Path replacement = Files.createTempFile(tempDir, "memos-upload-", ".md");
+        when(documentRepositoryPort.findByOwnerIdAndSourceFingerprint(any(), any())).thenReturn(Optional.empty());
+        when(documentRepositoryPort.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ingestionService.replaceFileSource(failed, replacement.toString(), "new-fingerprint", Map.of());
+
+        assertThat(Path.of(failed.getSourceUri())).doesNotExist();
+        assertThat(replacement).exists();
+    }
+
+    @Test
+    void replaceFileSourceRejectsDocumentsBeingIngested() throws IOException {
+        Document processing = pendingDocument(UUID.randomUUID()).toBuilder().status(DocumentStatus.PROCESSING).build();
+
+        assertThatThrownBy(() -> ingestionService.replaceFileSource(processing, "/tmp/other.md", "fp", Map.of()))
+                .isInstanceOf(IngestionException.class);
+        assertThat(Path.of(processing.getSourceUri())).exists();
+        verify(documentRepositoryPort, never()).save(any());
+    }
+
+    @Test
+    void deleteRemovesDocumentAndKeptUpload() throws IOException {
+        Document failed = pendingDocument(UUID.randomUUID()).toBuilder().status(DocumentStatus.FAILED).build();
+
+        ingestionService.delete(failed);
+
+        verify(documentRepositoryPort).deleteById(failed.getId());
+        assertThat(Path.of(failed.getSourceUri())).doesNotExist();
     }
 
     @Test

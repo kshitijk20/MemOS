@@ -48,7 +48,7 @@ memos:
   ingestion:
     chunk-size-tokens: 500
     chunk-overlap-tokens: 50
-    max-upload-size-bytes: 26214400
+    max-upload-size-bytes: 52428800
     git:
       allowed-extensions: .md,.markdown,.txt,.java,.py,.js,.ts,.tsx,.jsx,.go,.rb,.rs,.kt,.yaml,.yml,.json,.adoc,.rst
       max-file-size-bytes: 1048576

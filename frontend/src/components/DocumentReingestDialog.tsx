@@ -13,7 +13,11 @@ import { Label } from '@/components/ui/label'
 import { useReingestDocumentMutation } from '@/hooks/useDocuments'
 import type { DocumentResponse } from '@/api/types'
 
-const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
+function formatMegabytes(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
 
 interface DocumentReingestDialogProps {
   document: DocumentResponse | null
@@ -41,7 +45,7 @@ export function DocumentReingestDialog({ document, onOpenChange }: DocumentReing
       return
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setError('File exceeds the 25MB upload limit')
+      setError('File exceeds the 50MB upload limit')
       return
     }
 
@@ -71,9 +75,17 @@ export function DocumentReingestDialog({ document, onOpenChange }: DocumentReing
               type="file"
               accept=".pdf,.md,.markdown"
               required
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const selected = e.target.files?.[0] ?? null
+                setFile(selected)
+                setError(
+                  selected && selected.size > MAX_FILE_SIZE_BYTES
+                    ? `File is ${formatMegabytes(selected.size)} — exceeds the 50MB upload limit`
+                    : null,
+                )
+              }}
             />
-            <p className="text-xs text-muted-foreground">Must match the original type. Up to 25MB.</p>
+            <p className="text-xs text-muted-foreground">Must match the original type. Up to 50MB.</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

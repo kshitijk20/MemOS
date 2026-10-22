@@ -79,15 +79,31 @@ public class DocumentIngestionService {
     }
 
     public Document reingest(Document document) {
-        if (document.getStatus() == DocumentStatus.PENDING || document.getStatus() == DocumentStatus.PROCESSING) {
-            throw new IngestionException("This document is already being ingested.");
-        }
+        rejectInFlight(document);
         return documentRepositoryPort.save(document.prepareForReingest());
     }
 
+    private static void rejectInFlight(Document document) {
+        if (document.getStatus() == DocumentStatus.PENDING || document.getStatus() == DocumentStatus.PROCESSING) {
+            throw new IngestionException("This document is already being ingested.");
+        }
+    }
+
     public Document replaceFileSource(Document document, String sourceUri, String fingerprint, Map<String, Object> metadata) {
+        rejectInFlight(document);
         rejectDuplicate(document.getOwnerId(), fingerprint, document.getId());
-        return documentRepositoryPort.save(document.withSource(sourceUri, fingerprint, metadata));
+        Document updated = documentRepositoryPort.save(document.withSource(sourceUri, fingerprint, metadata));
+        // A failed ingestion keeps its upload for Retry; once replaced, that copy is unreachable.
+        if (!sourceUri.equals(document.getSourceUri())) {
+            deleteTempSourceFile(document);
+        }
+        return updated;
+    }
+
+    /** Deletes the document (its chunks cascade) and any upload still kept on disk for it. */
+    public void delete(Document document) {
+        documentRepositoryPort.deleteById(document.getId());
+        deleteTempSourceFile(document);
     }
 
     @Async
@@ -112,18 +128,19 @@ public class DocumentIngestionService {
             List<DocumentChunk> chunksToSave = buildChunksWithProgress(document, parsedDocuments);
 
             progressStore.update(documentId, "SAVING", chunksToSave.size(), chunksToSave.size());
-            documentChunkRepositoryPort.deleteByDocumentId(documentId);
-            documentChunkRepositoryPort.saveAll(chunksToSave);
+            documentChunkRepositoryPort.replaceForDocument(documentId, chunksToSave);
 
             document = document.withStatus(DocumentStatus.COMPLETED);
             documentRepositoryPort.save(document);
             log.info("Ingestion completed for document {} ({} chunks, v{})", documentId, chunksToSave.size(), document.getVersion());
+            deleteTempSourceFile(document);
         } catch (Exception e) {
+            // The upload stays on disk so Retry can resume; chunks embedded so far are cached
+            // by the embedding adapter and won't be re-embedded.
             log.error("Ingestion failed for document {}", documentId, e);
             documentRepositoryPort.save(document.withFailure(ProviderErrorMessages.sanitizeIngestionFailure(e.getMessage())));
         } finally {
             progressStore.remove(documentId);
-            deleteTempSourceFile(document);
         }
     }
 

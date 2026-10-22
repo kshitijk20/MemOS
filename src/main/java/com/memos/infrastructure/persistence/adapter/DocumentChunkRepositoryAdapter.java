@@ -59,6 +59,13 @@ public class DocumentChunkRepositoryAdapter implements DocumentChunkRepositoryPo
     }
 
     @Override
+    @Transactional
+    public List<DocumentChunk> replaceForDocument(UUID documentId, List<DocumentChunk> chunks) {
+        jpaRepository.deleteByDocumentId(documentId);
+        return saveAll(chunks);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public long countByDocumentId(UUID documentId) {
         return jpaRepository.countByDocumentId(documentId);

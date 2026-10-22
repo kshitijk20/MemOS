@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,7 +19,10 @@ public interface DocumentChunkJpaRepository extends JpaRepository<DocumentChunkE
 
     Optional<DocumentChunkEntity> findByIdAndDocumentId(UUID id, UUID documentId);
 
-    void deleteByDocumentId(UUID documentId);
+    /** Single bulk DELETE; the derived form would load every chunk (and its vector) first. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM DocumentChunkEntity c WHERE c.documentId = :documentId")
+    void deleteByDocumentId(@Param("documentId") UUID documentId);
 
     long countByDocumentId(UUID documentId);
 

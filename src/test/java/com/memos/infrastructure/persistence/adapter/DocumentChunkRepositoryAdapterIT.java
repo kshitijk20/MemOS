@@ -1,6 +1,7 @@
 package com.memos.infrastructure.persistence.adapter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
@@ -117,6 +118,30 @@ class DocumentChunkRepositoryAdapterIT {
 
         documentChunkRepositoryPort.deleteByDocumentId(documentId);
         assertThat(documentChunkRepositoryPort.countByDocumentId(documentId)).isZero();
+    }
+
+    @Test
+    void replaceForDocumentSwapsChunksAndKeepsOldOnesWhenSaveFails() {
+        UUID ownerId = createUser("replace-owner@example.com");
+        UUID documentId = createDocument(ownerId, DocumentStatus.COMPLETED);
+        documentChunkRepositoryPort.saveAll(List.of(
+                chunk(documentId, 0, "old zero", unitVector(0)),
+                chunk(documentId, 1, "old one", unitVector(1))));
+
+        documentChunkRepositoryPort.replaceForDocument(documentId, List.of(chunk(documentId, 0, "new zero", unitVector(2))));
+
+        var chunks = documentChunkRepositoryPort.findByDocumentId(documentId, PageRequest.of(0, 10)).items();
+        assertThat(chunks).extracting(DocumentChunk::getContent).containsExactly("new zero");
+
+        // The second chunk's vector doesn't fit the vector(768) column, so the save fails after
+        // the delete has already run inside the same transaction.
+        assertThatThrownBy(() -> documentChunkRepositoryPort.replaceForDocument(documentId, List.of(
+                chunk(documentId, 0, "broken a", unitVector(3)),
+                chunk(documentId, 1, "broken b", new float[3]))))
+                .isInstanceOf(RuntimeException.class);
+
+        chunks = documentChunkRepositoryPort.findByDocumentId(documentId, PageRequest.of(0, 10)).items();
+        assertThat(chunks).extracting(DocumentChunk::getContent).containsExactly("new zero");
     }
 
     @Test

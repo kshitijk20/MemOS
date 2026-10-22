@@ -37,9 +37,15 @@ public class RedisConfig {
                 RedisSerializationContext.SerializationPair.fromSerializer(
                         new Jackson2JsonRedisSerializer<>(float[].class)));
 
+        // Chunk embeddings outlive query embeddings so a failed large ingestion can be retried
+        // the next day without re-embedding the chunks it already finished.
+        RedisCacheConfiguration chunkEmbeddingsConfiguration = embeddingsConfiguration.entryTtl(Duration.ofHours(24));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(configuration)
-                .withInitialCacheConfigurations(Map.of("embeddings", embeddingsConfiguration))
+                .withInitialCacheConfigurations(Map.of(
+                        "embeddings", embeddingsConfiguration,
+                        "chunk-embeddings", chunkEmbeddingsConfiguration))
                 .build();
     }
 }

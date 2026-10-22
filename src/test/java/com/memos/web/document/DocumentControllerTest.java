@@ -2,6 +2,7 @@ package com.memos.web.document;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -320,18 +321,23 @@ class DocumentControllerTest {
     @Test
     void deleteRemovesOwnedDocument() throws Exception {
         UUID documentId = UUID.randomUUID();
-        when(documentRepositoryPort.existsByIdAndOwnerId(documentId, userId)).thenReturn(true);
+        Document doc = document(documentId, DocumentStatus.COMPLETED);
+        when(documentRepositoryPort.findByIdAndOwnerId(documentId, userId)).thenReturn(Optional.of(doc));
 
         mockMvc.perform(delete("/api/v1/documents/{id}", documentId).with(asUser()).with(csrf()))
                 .andExpect(status().isNoContent());
+
+        verify(documentIngestionService).delete(doc);
     }
 
     @Test
     void deleteReturnsNotFoundWhenDocumentNotOwned() throws Exception {
         UUID documentId = UUID.randomUUID();
-        when(documentRepositoryPort.existsByIdAndOwnerId(documentId, userId)).thenReturn(false);
+        when(documentRepositoryPort.findByIdAndOwnerId(documentId, userId)).thenReturn(Optional.empty());
 
         mockMvc.perform(delete("/api/v1/documents/{id}", documentId).with(asUser()).with(csrf()))
                 .andExpect(status().isNotFound());
+
+        verify(documentIngestionService, never()).delete(any());
     }
 }

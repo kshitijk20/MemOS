@@ -41,7 +41,9 @@ import com.memos.web.common.PageResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Tag(name = "Documents")
 @RestController
 @RequestMapping("/api/v1/documents")
@@ -63,13 +65,19 @@ public class DocumentController {
         DocumentSourceType sourceType = resolveSourceType(file);
         StoredUpload stored = storeTempFile(file, sourceType);
 
-        Document document = documentIngestionService.submit(
-                principal.getId(),
-                title,
-                sourceType,
-                stored.path().toString(),
-                stored.fingerprint(),
-                Map.of("originalFilename", file.getOriginalFilename() == null ? "" : file.getOriginalFilename()));
+        Document document;
+        try {
+            document = documentIngestionService.submit(
+                    principal.getId(),
+                    title,
+                    sourceType,
+                    stored.path().toString(),
+                    stored.fingerprint(),
+                    Map.of("originalFilename", file.getOriginalFilename() == null ? "" : file.getOriginalFilename()));
+        } catch (RuntimeException e) {
+            deleteQuietly(stored.path());
+            throw e;
+        }
         documentIngestionService.ingest(document.getId());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
@@ -227,8 +235,13 @@ public class DocumentController {
             metadata.putAll(document.getMetadata());
         }
         metadata.put("originalFilename", file.getOriginalFilename() == null ? "" : file.getOriginalFilename());
-        document = documentIngestionService.replaceFileSource(
-                document, stored.path().toString(), stored.fingerprint(), metadata);
+        try {
+            document = documentIngestionService.replaceFileSource(
+                    document, stored.path().toString(), stored.fingerprint(), metadata);
+        } catch (RuntimeException e) {
+            deleteQuietly(stored.path());
+            throw e;
+        }
         document = documentIngestionService.reingest(document);
         documentIngestionService.ingest(document.getId());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(DocumentResponse.from(document));
@@ -239,11 +252,7 @@ public class DocumentController {
             @AuthenticationPrincipal CustomUserPrincipal principal,
             @PathVariable UUID id) {
 
-        if (!documentRepositoryPort.existsByIdAndOwnerId(id, principal.getId())) {
-            throw new ResourceNotFoundException("Document", id);
-        }
-
-        documentRepositoryPort.deleteById(id);
+        documentIngestionService.delete(ownedDocument(principal.getId(), id));
         return ResponseEntity.noContent().build();
     }
 
@@ -274,6 +283,15 @@ public class DocumentController {
             return new StoredUpload(tempFile, SourceFingerprint.forFile(bytes));
         } catch (IOException | UncheckedIOException e) {
             throw new IngestionException("Failed to store uploaded file: " + e.getMessage(), e);
+        }
+    }
+
+    /** Removes an upload that was stored but never attached to a document (e.g. a duplicate). */
+    private static void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            log.warn("Failed to delete unused upload {}: {}", path, e.getMessage());
         }
     }
 

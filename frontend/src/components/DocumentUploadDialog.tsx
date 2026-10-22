@@ -12,7 +12,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useUploadDocumentMutation } from '@/hooks/useDocuments'
 
-const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
+function formatMegabytes(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
 
 interface DocumentUploadDialogProps {
   open: boolean
@@ -41,7 +45,7 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
       return
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setError('File exceeds the 25MB upload limit')
+      setError('File exceeds the 50MB upload limit')
       return
     }
 
@@ -78,9 +82,17 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
               type="file"
               accept=".pdf,.md,.markdown"
               required
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const selected = e.target.files?.[0] ?? null
+                setFile(selected)
+                setError(
+                  selected && selected.size > MAX_FILE_SIZE_BYTES
+                    ? `File is ${formatMegabytes(selected.size)} — exceeds the 50MB upload limit`
+                    : null,
+                )
+              }}
             />
-            <p className="text-xs text-muted-foreground">PDF or Markdown, up to 25MB.</p>
+            <p className="text-xs text-muted-foreground">PDF or Markdown, up to 50MB.</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
