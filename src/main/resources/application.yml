@@ -7,7 +7,8 @@ spring:
     username: ${DB_USER:memos}
     password: ${DB_PASSWORD:memos}
     hikari:
-      maximum-pool-size: 10
+      # Lower on small hosts (e.g. 512 MB) to save memory and database connections.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
 
   jpa:
     open-in-view: false
@@ -40,9 +41,10 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 50MB
+      # Lower these on small hosts: parsing a large PDF needs memory proportional to its size.
+      max-file-size: ${MEMOS_MAX_UPLOAD_SIZE:50MB}
       # headroom over max-file-size for multipart boundaries and the title field
-      max-request-size: 51MB
+      max-request-size: ${MEMOS_MAX_REQUEST_SIZE:51MB}
 
   threads:
     virtual:

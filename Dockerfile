@@ -20,6 +20,8 @@ RUN mkdir -p /app/uploads && chown memos:memos /app/memos-backend.jar /app/uploa
 USER memos
 
 ENV MEMOS_UPLOAD_DIR=/app/uploads
+# Heap sized from the container's memory limit. Hosts with very little memory (e.g. 512 MB)
+# override JAVA_OPTS with tighter settings; see docs/deploy-free.md.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
 EXPOSE 8080
-# Size the heap from the container's memory limit instead of the host's.
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75", "-jar", "/app/memos-backend.jar"]
+ENTRYPOINT ["sh", "-c", "exec java -XX:+UseContainerSupport $JAVA_OPTS -jar /app/memos-backend.jar"]

@@ -136,6 +136,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 Step-by-step guide for a free Oracle Cloud ARM server: [docs/deploy-oracle.md](docs/deploy-oracle.md).
 
+No server or card: [docs/deploy-free.md](docs/deploy-free.md) deploys the backend to Render
+(`render.yaml`), the database to Neon, Redis to Upstash and the frontend to Cloudflare Pages.
+
 ## API Overview
 
 All endpoints are under `/api/v1` and require a `Bearer <accessToken>` JWT except the

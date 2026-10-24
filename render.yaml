@@ -1,0 +1,84 @@
+# Render Blueprint for the MemOS backend on Render's free plan.
+# Database: Neon (Postgres + pgvector). Redis: Upstash. Frontend: Cloudflare Pages.
+# Step-by-step setup: docs/deploy-free.md
+#
+# Values marked `sync: false` are secrets: Render asks for them when the Blueprint is created.
+services:
+  - type: web
+    name: memos-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    # Only rebuild for backend changes (the frontend deploys separately).
+    buildFilter:
+      paths:
+        - src/**
+        - pom.xml
+        - Dockerfile
+        - render.yaml
+    envVars:
+      # Render routes traffic to this port.
+      - key: PORT
+        value: "8080"
+      # The free instance has 512 MB and a small CPU share: small heap, serial GC, C1 JIT only.
+      - key: JAVA_OPTS
+        value: "-XX:MaxRAMPercentage=55 -XX:+UseSerialGC -Xss512k -XX:ReservedCodeCacheSize=48m -XX:MaxMetaspaceSize=160m -XX:TieredStopAtLevel=1"
+
+      # --- Neon Postgres (use the direct, non-pooled connection) ---
+      # jdbc:postgresql://<host>/<db>?sslmode=require&reWriteBatchedInserts=true
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: DB_POOL_SIZE
+        value: "3"
+
+      # --- Upstash Redis (TLS) ---
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: "6379"
+      - key: SPRING_DATA_REDIS_USERNAME
+        value: default
+      - key: SPRING_DATA_REDIS_PASSWORD
+        sync: false
+      - key: SPRING_DATA_REDIS_SSL_ENABLED
+        value: "true"
+
+      # --- Security and AI ---
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      # The Cloudflare Pages URL, e.g. https://memos-xyz.pages.dev
+      - key: MEMOS_CORS_ALLOWED_ORIGINS
+        sync: false
+      # Recommended: only people you share this code with can register.
+      - key: MEMOS_INVITE_CODE
+        sync: false
+
+      # --- Free-tier tuning ---
+      # Parsing large PDFs needs memory; keep uploads small on 512 MB.
+      - key: MEMOS_MAX_UPLOAD_SIZE
+        value: 10MB
+      - key: MEMOS_MAX_REQUEST_SIZE
+        value: 11MB
+      # One extra AI call per follow-up question; off to save the free Gemini quota.
+      - key: MEMOS_RAG_QUERY_REWRITE_ENABLED
+        value: "false"
+      # Health checks (Render's and the keep-alive ping) must not touch the database or Redis:
+      # that would keep Neon awake 24/7 and use up its free compute hours.
+      - key: MANAGEMENT_HEALTH_DB_ENABLED
+        value: "false"
+      - key: MANAGEMENT_HEALTH_REDIS_ENABLED
+        value: "false"
+      - key: SPRINGDOC_APIDOCS_ENABLED
+        value: "false"
+      - key: SPRINGDOC_SWAGGERUI_ENABLED
+        value: "false"

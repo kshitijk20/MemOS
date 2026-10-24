@@ -2,10 +2,12 @@ package com.memos.web.common;
 
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -29,6 +31,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @Value("${spring.servlet.multipart.max-file-size:50MB}")
+    private DataSize maxUploadSize = DataSize.ofMegabytes(50);
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
@@ -94,7 +99,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException ex, HttpServletRequest request) {
-        return build(HttpStatus.PAYLOAD_TOO_LARGE, "File exceeds the 50MB upload limit", request);
+        return build(HttpStatus.PAYLOAD_TOO_LARGE,
+                "File exceeds the " + maxUploadSize.toMegabytes() + "MB upload limit", request);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

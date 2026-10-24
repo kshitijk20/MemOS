@@ -10,10 +10,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { MAX_FILE_SIZE_BYTES, MAX_UPLOAD_MB } from '@/lib/upload-limit'
 import { useReingestDocumentMutation } from '@/hooks/useDocuments'
 import type { DocumentResponse } from '@/api/types'
 
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 
 function formatMegabytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
@@ -45,7 +45,7 @@ export function DocumentReingestDialog({ document, onOpenChange }: DocumentReing
       return
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setError('File exceeds the 50MB upload limit')
+      setError(`File exceeds the ${MAX_UPLOAD_MB}MB upload limit`)
       return
     }
 
@@ -80,12 +80,12 @@ export function DocumentReingestDialog({ document, onOpenChange }: DocumentReing
                 setFile(selected)
                 setError(
                   selected && selected.size > MAX_FILE_SIZE_BYTES
-                    ? `File is ${formatMegabytes(selected.size)} — exceeds the 50MB upload limit`
+                    ? `File is ${formatMegabytes(selected.size)} — exceeds the ${MAX_UPLOAD_MB}MB upload limit`
                     : null,
                 )
               }}
             />
-            <p className="text-xs text-muted-foreground">Must match the original type. Up to 50MB.</p>
+            <p className="text-xs text-muted-foreground">{`Must match the original type. Up to ${MAX_UPLOAD_MB}MB.`}</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

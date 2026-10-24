@@ -10,9 +10,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { MAX_FILE_SIZE_BYTES, MAX_UPLOAD_MB } from '@/lib/upload-limit'
 import { useUploadDocumentMutation } from '@/hooks/useDocuments'
 
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 
 function formatMegabytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
@@ -45,7 +45,7 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
       return
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setError('File exceeds the 50MB upload limit')
+      setError(`File exceeds the ${MAX_UPLOAD_MB}MB upload limit`)
       return
     }
 
@@ -87,12 +87,12 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
                 setFile(selected)
                 setError(
                   selected && selected.size > MAX_FILE_SIZE_BYTES
-                    ? `File is ${formatMegabytes(selected.size)} — exceeds the 50MB upload limit`
+                    ? `File is ${formatMegabytes(selected.size)} — exceeds the ${MAX_UPLOAD_MB}MB upload limit`
                     : null,
                 )
               }}
             />
-            <p className="text-xs text-muted-foreground">PDF or Markdown, up to 50MB.</p>
+            <p className="text-xs text-muted-foreground">{`PDF or Markdown, up to ${MAX_UPLOAD_MB}MB.`}</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

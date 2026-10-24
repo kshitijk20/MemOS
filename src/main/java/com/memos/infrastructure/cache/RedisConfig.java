@@ -4,6 +4,9 @@ import java.time.Duration;
 
 import java.util.Map;
 
+import org.springframework.cache.annotation.CachingConfigurer;
+import org.springframework.cache.interceptor.CacheErrorHandler;
+import org.springframework.cache.interceptor.LoggingCacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -19,7 +22,16 @@ import org.springframework.data.redis.serializer.RedisSerializationContext;
  * serialization so cached values remain readable across application versions/languages.
  */
 @Configuration
-public class RedisConfig {
+public class RedisConfig implements CachingConfigurer {
+
+    /**
+     * Treat cache failures (Redis down, a hosted Redis over its quota) as cache misses: the value
+     * is computed normally and the error logged, instead of failing the request.
+     */
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new LoggingCacheErrorHandler();
+    }
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
