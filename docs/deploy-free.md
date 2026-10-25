@@ -92,7 +92,10 @@ Open the Pages URL, register with your invite code, upload a document and ask a 
 
 ## 6. Keep the backend awake (optional, recommended)
 
-Free Render services sleep after 15 minutes without traffic. A free uptime monitor stops that:
+Free Render services sleep after 15 minutes without traffic. The repository's
+`.github/workflows/keep-alive.yml` pings the backend every 5 minutes from GitHub Actions (set the
+repository variable `BACKEND_HEALTH_URL` if your Render URL differs). GitHub can delay scheduled
+runs, so for tighter timing you can use a free uptime monitor instead:
 
 1. Sign up at <https://uptimerobot.com> (or <https://cron-job.org>).
 2. Add an **HTTP(s)** monitor for `https://<your-service>.onrender.com/actuator/health`,
