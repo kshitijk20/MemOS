@@ -11,6 +11,15 @@ export async function getRegistrationPolicy(): Promise<RegistrationPolicy> {
   return response.data
 }
 
+/** Always resolves the same way whether or not the account exists. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await apiClient.post('/api/v1/auth/password-reset/request', { email })
+}
+
+export async function confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+  await apiClient.post('/api/v1/auth/password-reset/confirm', { token, newPassword })
+}
+
 export async function login(payload: LoginRequest): Promise<AuthResponse> {
   const response = await apiClient.post<AuthResponse>('/api/v1/auth/login', payload)
   return response.data

@@ -83,6 +83,19 @@ memos:
     registration-enabled: ${MEMOS_REGISTRATION_ENABLED:true}
     invite-code: ${MEMOS_INVITE_CODE:}
 
+  # Base URL of the web app, used in links sent by email (e.g. password reset).
+  app:
+    frontend-url: ${MEMOS_FRONTEND_URL:http://localhost:3000}
+
+  # Transactional email via Brevo's HTTP API (free tier: 300/day). Without an API key and sender,
+  # emails are logged instead of sent. The sender address must be verified in Brevo.
+  mail:
+    brevo-api-key: ${BREVO_API_KEY:}
+    from-email: ${MAIL_FROM_EMAIL:}
+    from-name: ${MAIL_FROM_NAME:MemOS}
+    reset-emails-per-address-per-hour: 3
+    reset-emails-per-day: 250
+
   # Per-user limits so one account can't use up the shared AI quota or the server's storage.
   # 0 disables a limit.
   limits:

@@ -103,6 +103,29 @@ cron triggers, and you can see each run under the Worker's **Logs** / **Observab
 The health check doesn't touch the database or Redis, so these pings don't use Neon or Upstash
 quota. One always-on service uses about 744 of Render's 750 free hours a month.
 
+## 7. Password reset emails (Brevo)
+
+Render's free plan blocks outgoing SMTP, so MemOS sends email through Brevo's HTTP API
+(free: 300 emails/day). Without these settings, "Forgot password" still works but the email is
+only written to the backend log.
+
+1. Sign up at <https://www.brevo.com> (free plan).
+2. **Senders, domains & dedicated IPs → Senders → Add a sender**: your name and the email address
+   to send from (e.g. your Gmail). Brevo emails you a confirmation link; click it.
+3. **SMTP & API → API keys → Generate a new API key**, name it `memos`, copy it (shown once).
+4. In Render → `memos-backend` → **Environment**, add:
+
+   | Variable | Value |
+   |---|---|
+   | `BREVO_API_KEY` | the key from step 3 |
+   | `MAIL_FROM_EMAIL` | the sender address verified in step 2 |
+   | `MEMOS_FRONTEND_URL` | your frontend URL, e.g. `https://memos-ai.byte-phantom.workers.dev` |
+
+5. Save; Render redeploys. Test with **Forgot your password?** on the sign-in page.
+
+Emails sent from a Gmail address through Brevo can land in spam, since they don't come from
+Google's own servers. A custom domain verified in Brevo fixes that.
+
 ## Updating
 
 Push to `main`: Render rebuilds the backend (only when backend files change) and Cloudflare

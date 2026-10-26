@@ -26,4 +26,7 @@ public interface TokenIssuerPort {
      * Revokes a refresh token so it can no longer be used, if it exists.
      */
     void revokeRefreshToken(String refreshToken);
+
+    /** Revokes every refresh token of the user, signing them out everywhere (e.g. after a password reset). */
+    void revokeAllForUser(java.util.UUID userId);
 }

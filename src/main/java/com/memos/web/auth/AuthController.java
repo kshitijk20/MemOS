@@ -1,5 +1,7 @@
 package com.memos.web.auth;
 
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.memos.application.auth.AuthApplicationService;
+import com.memos.application.auth.PasswordResetService;
 import com.memos.application.auth.AuthResult;
 import com.memos.application.auth.LoginCommand;
 import com.memos.application.auth.RegisterCommand;
@@ -26,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 public class AuthController {
 
     private final AuthApplicationService authApplicationService;
+    private final PasswordResetService passwordResetService;
 
     @PostMapping("/register")
     public ResponseEntity<UserSummaryResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -38,6 +42,23 @@ public class AuthController {
     @GetMapping("/registration")
     public ResponseEntity<AuthApplicationService.RegistrationPolicy> registration() {
         return ResponseEntity.ok(authApplicationService.registrationPolicy());
+    }
+
+    /**
+     * Emails a reset link if an account exists. Always answers 202 with the same message, so the
+     * endpoint can't be used to find out which emails have accounts.
+     */
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<Map<String, String>> requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+        passwordResetService.requestReset(request.email());
+        return ResponseEntity.accepted().body(Map.of("message",
+                "If an account exists for that email, we've sent a link to reset the password."));
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<Void> confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmRequest request) {
+        passwordResetService.resetPassword(request.token(), request.newPassword());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/login")

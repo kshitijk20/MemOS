@@ -68,4 +68,10 @@ public class JwtTokenIssuerAdapter implements TokenIssuerPort {
                     refreshTokenJpaRepository.save(entity);
                 });
     }
+
+    @Override
+    @Transactional
+    public void revokeAllForUser(java.util.UUID userId) {
+        refreshTokenJpaRepository.revokeAllForUser(userId);
+    }
 }

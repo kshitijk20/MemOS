@@ -18,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.memos.application.auth.AuthApplicationService;
+import com.memos.application.auth.PasswordResetService;
 import com.memos.application.auth.AuthResult;
 import com.memos.application.auth.TokenPair;
 import com.memos.domain.exception.DuplicateResourceException;
@@ -37,6 +38,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthApplicationService authApplicationService;
+
+    @MockitoBean
+    private PasswordResetService passwordResetService;
 
     @MockitoBean
     private JwtService jwtService;
@@ -149,5 +153,37 @@ class AuthControllerTest {
                                 {"refreshToken":"refresh-token"}
                                 """))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void passwordResetRequestAlwaysAnswersTheSameWay() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/password-reset/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"anyone@example.com\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value(
+                        "If an account exists for that email, we've sent a link to reset the password."));
+        org.mockito.Mockito.verify(passwordResetService).requestReset("anyone@example.com");
+    }
+
+    @Test
+    void passwordResetConfirmReportsInvalidLinks() throws Exception {
+        org.mockito.Mockito.doThrow(new com.memos.domain.exception.InvalidRequestException("This reset link is invalid or has expired."))
+                .when(passwordResetService).resetPassword("bad", "new-password-1");
+
+        mockMvc.perform(post("/api/v1/auth/password-reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"bad\",\"newPassword\":\"new-password-1\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("This reset link is invalid or has expired."));
+    }
+
+    @Test
+    void passwordResetConfirmValidatesPasswordLength() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/password-reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"t\",\"newPassword\":\"short\"}"))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(passwordResetService);
     }
 }
