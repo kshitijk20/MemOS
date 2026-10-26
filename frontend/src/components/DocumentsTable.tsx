@@ -173,11 +173,11 @@ export function DocumentsTable({ collection, onManageCollections }: DocumentsTab
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[34%]">Title</TableHead>
-              <TableHead className="w-[14%]">Source</TableHead>
-              <TableHead className="w-[16%]">Status</TableHead>
-              <TableHead className="w-[20%]">Created</TableHead>
-              <TableHead className="w-[16%] text-right">Actions</TableHead>
+              <TableHead className="w-[46%] sm:w-[34%]">Title</TableHead>
+              <TableHead className="hidden w-[14%] sm:table-cell">Source</TableHead>
+              <TableHead className="w-[26%] sm:w-[16%]">Status</TableHead>
+              <TableHead className="hidden w-[20%] sm:table-cell">Created</TableHead>
+              <TableHead className="w-[28%] text-right sm:w-[16%]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -194,6 +194,9 @@ export function DocumentsTable({ collection, onManageCollections }: DocumentsTab
                       {doc.version > 1 && (
                         <span className="ml-2 text-xs font-normal text-muted-foreground">v{doc.version}</span>
                       )}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs font-normal text-muted-foreground sm:hidden">
+                      {SOURCE_TYPE_LABELS[doc.sourceType]} · {new Date(doc.createdAt).toLocaleDateString()}
                     </p>
                     {collections.some((c) => c.documentIds.includes(doc.id)) && (
                       <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs font-normal text-muted-foreground">
@@ -221,15 +224,15 @@ export function DocumentsTable({ collection, onManageCollections }: DocumentsTab
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{SOURCE_TYPE_LABELS[doc.sourceType]}</TableCell>
+                <TableCell className="hidden text-muted-foreground sm:table-cell">{SOURCE_TYPE_LABELS[doc.sourceType]}</TableCell>
                 <TableCell>
                   {doc.status === 'PROCESSING'
                     ? <IngestionProgressCell documentId={doc.id} />
                     : <StatusBadge status={doc.status} />}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{formatDate(doc.createdAt)}</TableCell>
+                <TableCell className="hidden text-muted-foreground sm:table-cell">{formatDate(doc.createdAt)}</TableCell>
                 <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1">
+                  <div className="flex flex-wrap items-center justify-end gap-1">
                     {doc.status === 'FAILED' && (
                       <Button
                         variant="ghost"

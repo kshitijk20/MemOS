@@ -55,12 +55,12 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{greeting}, {user?.fullName?.split(' ')[0] ?? 'there'}</h1>
           <p className="text-muted-foreground">Here's what's happening in your knowledge base.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" asChild>
             <Link to="/documents">
               <Upload className="size-4" />
@@ -109,7 +109,7 @@ export function DashboardPage() {
       {/* Recent items */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Recent documents */}
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Recent documents</h2>
             <Button variant="ghost" size="sm" className="text-xs" asChild>
@@ -154,7 +154,7 @@ export function DashboardPage() {
         </div>
 
         {/* Recent conversations */}
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Recent conversations</h2>
             <Button variant="ghost" size="sm" className="text-xs" asChild>

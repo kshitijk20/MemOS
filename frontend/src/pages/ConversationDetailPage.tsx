@@ -114,7 +114,7 @@ export function ConversationDetailPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
+    <div className="flex h-[calc(100dvh-11rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col gap-3 md:h-[calc(100dvh-8rem)] md:gap-4">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon-sm" asChild>
           <Link to="/conversations">
@@ -129,7 +129,7 @@ export function ConversationDetailPage() {
             <h1 className="text-xl font-semibold">{conversation?.title ?? 'Untitled conversation'}</h1>
             <Badge variant="secondary">{conversation?.provider}</Badge>
             {conversation?.model && (
-              <span className="text-xs text-muted-foreground">{conversation.model}</span>
+              <span className="hidden text-xs text-muted-foreground sm:inline">{conversation.model}</span>
             )}
             {conversation && <ConversationScopeControl conversation={conversation} />}
           </div>
