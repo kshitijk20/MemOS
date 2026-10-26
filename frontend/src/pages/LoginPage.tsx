@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/lib/use-auth'
+import { useSlowHint } from '@/hooks/useSlowHint'
 import { extractErrorMessage } from '@/api/client'
 
 export function LoginPage() {
@@ -14,6 +15,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
+  const slow = useSlowHint(isPending)
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -67,6 +69,11 @@ export function LoginPage() {
             <Button type="submit" disabled={isPending} className="w-full">
               {isPending ? 'Signing in…' : 'Sign in'}
             </Button>
+            {slow && (
+              <p className="text-center text-xs text-muted-foreground">
+                Waking up the server, this can take up to a minute on the free plan…
+              </p>
+            )}
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
             Forgot your password? Sign in if you can, then reset it in Settings.

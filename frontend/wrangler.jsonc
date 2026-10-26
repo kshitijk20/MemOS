@@ -1,12 +1,24 @@
-// Cloudflare Workers config for serving the built React app as static assets.
+// Cloudflare Workers config for the MemOS frontend.
 // Used by Workers Builds (Root directory: frontend, Build: npm run build, Deploy: npx wrangler deploy).
 // "name" must match the Worker's name in the Cloudflare dashboard.
 {
   "name": "memos",
+  "main": "./worker/index.js",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     // Client-side routes like /conversations/123 load index.html instead of returning 404.
     "not_found_handling": "single-page-application"
+  },
+  // Keep the Render backend awake (free plan sleeps after 15 idle minutes).
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "vars": {
+    "BACKEND_HEALTH_URL": "https://memos-backend-4bkg.onrender.com/actuator/health"
+  },
+  "observability": {
+    "enabled": true
   }
 }

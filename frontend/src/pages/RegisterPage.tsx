@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/lib/use-auth'
+import { useSlowHint } from '@/hooks/useSlowHint'
 import { extractErrorMessage } from '@/api/client'
 
 export function RegisterPage() {
@@ -21,6 +22,7 @@ export function RegisterPage() {
   const { data: policy } = useQuery({ queryKey: ['registration-policy'], queryFn: getRegistrationPolicy, retry: false })
   const closed = policy?.open === false
   const [isPending, setIsPending] = useState(false)
+  const slow = useSlowHint(isPending)
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -107,6 +109,11 @@ export function RegisterPage() {
               <Button type="submit" disabled={isPending} className="w-full">
                 {isPending ? 'Creating account…' : 'Create account'}
               </Button>
+              {slow && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Waking up the server, this can take up to a minute on the free plan…
+                </p>
+              )}
             </form>
           )}
           <p className="mt-4 text-center text-sm text-muted-foreground">

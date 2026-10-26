@@ -7,7 +7,7 @@ No server to manage and no credit card needed. Each part runs on a different fre
 | Backend (Spring Boot, Docker) | **Render** | 512 MB RAM, small CPU share, sleeps after 15 min without traffic |
 | Postgres + pgvector | **Neon** | ~0.5 GB storage, suspends when idle, monthly compute-hour allowance |
 | Redis (caches, rate limits) | **Upstash** | 256 MB, 500K commands/month |
-| Frontend (React) | **Cloudflare Pages** | Static hosting, generous limits |
+| Frontend (React) | **Cloudflare Workers** (static assets) | Generous free limits, cron triggers |
 
 Trade-offs compared with a single server (`docs/deploy-oracle.md`): uploads are limited to
 **10 MB**, the first request after the backend has slept takes up to a minute or two (prevented
@@ -90,19 +90,18 @@ Pages URL from step 4 (no trailing slash) and save; Render redeploys automatical
 
 Open the Pages URL, register with your invite code, upload a document and ask a question.
 
-## 6. Keep the backend awake (optional, recommended)
+## 6. Keep the backend awake
 
-Free Render services sleep after 15 minutes without traffic. The repository's
-`.github/workflows/keep-alive.yml` pings the backend every 5 minutes from GitHub Actions (set the
-repository variable `BACKEND_HEALTH_URL` if your Render URL differs). GitHub can delay scheduled
-runs, so for tighter timing you can use a free uptime monitor instead:
+Free Render services sleep after 15 minutes without traffic, and waking takes a minute or more.
+The frontend Worker (`frontend/worker/index.js`) has a Cloudflare **cron trigger** that pings the
+backend's health endpoint every 5 minutes, so it stays awake. The URL is `BACKEND_HEALTH_URL` in
+`frontend/wrangler.jsonc`; change it if your Render URL differs. Cloudflare's free plan includes
+cron triggers, and you can see each run under the Worker's **Logs** / **Observability** tab.
 
-1. Sign up at <https://uptimerobot.com> (or <https://cron-job.org>).
-2. Add an **HTTP(s)** monitor for `https://<your-service>.onrender.com/actuator/health`,
-   every **5–10 minutes**.
+(GitHub Actions schedules were tried first, but GitHub ran them only every few hours.)
 
-One always-on service uses about 744 of Render's 750 free hours a month. The health check doesn't
-touch the database or Redis, so these pings don't use Neon or Upstash quota.
+The health check doesn't touch the database or Redis, so these pings don't use Neon or Upstash
+quota. One always-on service uses about 744 of Render's 750 free hours a month.
 
 ## Updating
 
