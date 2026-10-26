@@ -68,9 +68,9 @@ function IngestionProgressCell({ documentId }: { documentId: string }) {
   const label = PHASE_LABELS[progress.phase] ?? progress.phase
 
   return (
-    <div className="flex min-w-[140px] flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="text-muted-foreground">{label}</span>
+    <div className="flex w-full min-w-0 flex-col gap-1.5 sm:min-w-[140px]">
+      <div className="flex items-center justify-between gap-1 text-xs">
+        <span className="truncate text-muted-foreground">{label}</span>
         {progress.total > 0 && (
           <span className="font-medium tabular-nums">{progress.percentComplete}%</span>
         )}
@@ -81,7 +81,7 @@ function IngestionProgressCell({ documentId }: { documentId: string }) {
         className="h-1.5"
       />
       {progress.total > 0 && (
-        <span className="text-[10px] text-muted-foreground tabular-nums">
+        <span className="hidden text-[10px] text-muted-foreground tabular-nums sm:inline">
           {progress.processed} / {progress.total} chunks
         </span>
       )}
