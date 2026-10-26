@@ -2,7 +2,7 @@
 // Used by Workers Builds (Root directory: frontend, Build: npm run build, Deploy: npx wrangler deploy).
 // "name" must match the Worker's name in the Cloudflare dashboard.
 {
-  "name": "memos",
+  "name": "memos-ai",
   "main": "./worker/index.js",
   "compatibility_date": "2026-10-01",
   "assets": {
