@@ -1,6 +1,9 @@
 package com.memos.web.auth;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -19,9 +22,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.memos.application.auth.AuthApplicationService;
 import com.memos.application.auth.PasswordResetService;
+import com.memos.application.auth.RegisterCommand;
+import com.memos.application.auth.SignupService;
 import com.memos.application.auth.AuthResult;
 import com.memos.application.auth.TokenPair;
-import com.memos.domain.exception.DuplicateResourceException;
+import com.memos.domain.exception.AccessDeniedException;
+import com.memos.domain.exception.InvalidRequestException;
 import com.memos.domain.exception.InvalidCredentialsException;
 import com.memos.domain.user.Role;
 import com.memos.domain.user.User;
@@ -43,33 +49,25 @@ class AuthControllerTest {
     private PasswordResetService passwordResetService;
 
     @MockitoBean
+    private SignupService signupService;
+
+    @MockitoBean
     private JwtService jwtService;
 
     @MockitoBean
     private UserDetailsServiceImpl userDetailsServiceImpl;
 
     @Test
-    void registerReturnsCreatedUserSummary() throws Exception {
-        User user = User.builder()
-                .id(UUID.randomUUID())
-                .email("alice@example.com")
-                .passwordHash("hashed")
-                .fullName("Alice")
-                .role(Role.USER)
-                .enabled(true)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
-        when(authApplicationService.register(any())).thenReturn(user);
-
+    void registerSendsCodeAndAnswersTheSameWhetherOrNotTheAccountExists() throws Exception {
         mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email":"alice@example.com","password":"super-secret","fullName":"Alice"}
                                 """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.email").value("alice@example.com"))
-                .andExpect(jsonPath("$.fullName").value("Alice"));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").exists());
+
+        verify(signupService).startSignup(new RegisterCommand("alice@example.com", "super-secret", "Alice"));
     }
 
     @Test
@@ -83,16 +81,53 @@ class AuthControllerTest {
     }
 
     @Test
-    void registerReturnsConflictForDuplicateEmail() throws Exception {
-        when(authApplicationService.register(any())).thenThrow(new DuplicateResourceException("An account with this email already exists"));
+    void registerIsForbiddenWhenRegistrationIsClosed() throws Exception {
+        doThrow(new AccessDeniedException("Registration is closed on this server."))
+                .when(signupService).requireRegistrationOpen();
 
         mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email":"alice@example.com","password":"super-secret","fullName":"Alice"}
                                 """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.status").value(409));
+                .andExpect(status().isForbidden());
+        verify(signupService, never()).startSignup(any());
+    }
+
+    @Test
+    void verifyRegistrationReturnsTokens() throws Exception {
+        User user = User.builder()
+                .id(UUID.randomUUID())
+                .email("alice@example.com")
+                .passwordHash("hashed")
+                .fullName("Alice")
+                .role(Role.USER)
+                .enabled(true)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        when(signupService.verifySignup("alice@example.com", "123456"))
+                .thenReturn(new AuthResult(user, new TokenPair("access-token", "refresh-token", 900L)));
+
+        mockMvc.perform(post("/api/v1/auth/register/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"alice@example.com","code":"123456"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.accessToken").value("access-token"));
+    }
+
+    @Test
+    void verifyRegistrationRejectsAWrongCode() throws Exception {
+        when(signupService.verifySignup(any(), any())).thenThrow(new InvalidRequestException("That code isn't right."));
+
+        mockMvc.perform(post("/api/v1/auth/register/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"alice@example.com","code":"000000"}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

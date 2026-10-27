@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { jwtDecode } from 'jwt-decode'
 import * as authApi from '@/api/auth'
+import * as usersApi from '@/api/users'
 import {
   getRefreshToken,
   setAccessToken,
@@ -9,6 +10,7 @@ import {
 } from '@/api/client'
 import type { AuthResponse, UserRole } from '@/api/types'
 import { AuthContext, type AuthUser } from '@/lib/auth-context-base'
+import { queryClient } from '@/lib/query-client'
 
 interface JwtPayload {
   sub: string
@@ -63,9 +65,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userFromTokens(tokens))
   }
 
-  async function register(email: string, password: string, fullName: string, inviteCode?: string) {
-    await authApi.register({ email, password, fullName, inviteCode })
-    const tokens = await authApi.login({ email, password })
+  async function register(email: string, password: string, fullName: string) {
+    await authApi.register({ email, password, fullName })
+  }
+
+  async function verifyRegistration(email: string, code: string, fullName: string) {
+    const tokens = await authApi.verifyRegistration({ email, code })
     setAccessToken(tokens.accessToken)
     setRefreshToken(tokens.refreshToken)
     setUser(userFromTokens(tokens, fullName))
@@ -84,13 +89,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // best-effort
       }
     }
+    clearSession()
+  }
+
+  async function logoutEverywhere() {
+    await usersApi.logoutEverywhere()
+    clearSession()
+  }
+
+  /** Forget tokens and cached data, so the next person on this browser sees nothing of this account. */
+  function clearSession() {
     setAccessToken(null)
     setRefreshToken(null)
+    queryClient.clear()
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: user !== null,
+        isLoading,
+        login,
+        register,
+        verifyRegistration,
+        logout,
+        logoutEverywhere,
+        updateUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

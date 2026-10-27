@@ -22,14 +22,17 @@ export interface RegisterRequest {
   email: string
   password: string
   fullName: string
-  /** Only checked when the server requires an invite code. */
-  inviteCode?: string
 }
 
-/** How sign-up works on this server. */
+/** Second sign-up step: the code emailed after {@link RegisterRequest}. */
+export interface VerifySignupRequest {
+  email: string
+  code: string
+}
+
+/** Whether this server accepts new accounts. */
 export interface RegistrationPolicy {
   open: boolean
-  inviteCodeRequired: boolean
 }
 
 export interface UserResponse {

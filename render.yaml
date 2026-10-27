@@ -59,11 +59,9 @@ services:
       # The frontend URL, e.g. https://memos-ai.byte-phantom.workers.dev
       - key: MEMOS_CORS_ALLOWED_ORIGINS
         sync: false
-      # Recommended: only people you share this code with can register.
-      - key: MEMOS_INVITE_CODE
-        sync: false
 
-      # --- Email (password reset) via Brevo; see docs/deploy-free.md ---
+      # --- Email (sign-up codes and password reset) via Brevo; see docs/deploy-free.md ---
+      # Required: new accounts verify their email with a code, so sign-up needs working email.
       - key: BREVO_API_KEY
         sync: false
       # The sender address verified in Brevo, e.g. your Gmail address

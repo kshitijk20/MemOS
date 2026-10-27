@@ -8,8 +8,8 @@ public record GitIngestRequest(
 
         @NotBlank
         @Pattern(
-                regexp = "^(https?://|git@|git://)\\S+",
-                message = "must be a valid Git repository URL (https://, git@, or git://)")
+                regexp = "^https://\\S+",
+                message = "must be an https:// Git repository URL")
         String repoUrl,
 
         @NotBlank @Size(max = 500)

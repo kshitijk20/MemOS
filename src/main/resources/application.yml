@@ -74,14 +74,16 @@ memos:
     # Required, no default: a default secret would be public in the repository. JwtService
     # refuses to start without a real one. Generate with: openssl rand -base64 64
     secret: ${JWT_SECRET:}
-    access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:3600000}    # 1 hour
+    # Short-lived: a leaked access token can't be revoked, so it should expire soon.
+    access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}     # 15 minutes
     refresh-token-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000} # 7 days
     issuer: memos-backend
 
-  # Who can sign up. With an invite code set, only people you give it to can register.
+  # Who can sign up. New accounts must verify their email with an emailed code, so sign-up
+  # needs working email (see mail below) in production.
   auth:
     registration-enabled: ${MEMOS_REGISTRATION_ENABLED:true}
-    invite-code: ${MEMOS_INVITE_CODE:}
+    login-attempts-per-15-minutes: 10
 
   # Base URL of the web app, used in links sent by email (e.g. password reset).
   app:
@@ -94,7 +96,9 @@ memos:
     from-email: ${MAIL_FROM_EMAIL:}
     from-name: ${MAIL_FROM_NAME:MemOS}
     reset-emails-per-address-per-hour: 3
-    reset-emails-per-day: 250
+    signup-emails-per-address-per-hour: 3
+    # All emails per day (sign-up codes + reset links), under Brevo's free 300/day.
+    emails-per-day: 250
 
   # Per-user limits so one account can't use up the shared AI quota or the server's storage.
   # 0 disables a limit.

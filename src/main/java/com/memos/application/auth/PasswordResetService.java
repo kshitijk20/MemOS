@@ -62,8 +62,8 @@ public class PasswordResetService {
     @Value("${memos.mail.reset-emails-per-address-per-hour:3}")
     private int perAddressPerHour = 3;
 
-    /** Reset emails sent per day across all users, kept under the email provider's free quota. */
-    @Value("${memos.mail.reset-emails-per-day:250}")
+    /** All emails sent per day (shared with sign-up), kept under the email provider's free quota. */
+    @Value("${memos.mail.emails-per-day:250}")
     private int perDay = 250;
 
     /** Accepts the request and does the work in the background (see class comment). */
@@ -88,7 +88,7 @@ public class PasswordResetService {
             log.warn("Password reset emails for one address hit the hourly limit; not sending");
             return;
         }
-        if (!rateLimiterPort.tryAcquire("password-reset:global", perDay, Duration.ofDays(1)).allowed()) {
+        if (!rateLimiterPort.tryAcquire("email:global", perDay, Duration.ofDays(1)).allowed()) {
             log.warn("Daily password reset email limit reached; not sending");
             return;
         }

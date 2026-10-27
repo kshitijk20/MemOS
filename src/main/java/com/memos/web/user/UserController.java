@@ -5,10 +5,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.memos.application.auth.AuthApplicationService;
 import com.memos.application.user.UpdateProfileCommand;
 import com.memos.application.user.UserProfileService;
 import com.memos.domain.user.User;
@@ -27,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 public class UserController {
 
     private final UserProfileService userProfileService;
+    private final AuthApplicationService authApplicationService;
 
     @GetMapping("/me")
     public ResponseEntity<UserSummaryResponse> getProfile(@AuthenticationPrincipal CustomUserPrincipal principal) {
@@ -48,5 +51,12 @@ public class UserController {
                         request.newPassword()));
 
         return ResponseEntity.ok(UserSummaryResponse.from(updated));
+    }
+
+    /** Signs out every device, including this one once its access token expires. */
+    @PostMapping("/me/logout-everywhere")
+    public ResponseEntity<Void> logoutEverywhere(@AuthenticationPrincipal CustomUserPrincipal principal) {
+        authApplicationService.logoutEverywhere(principal.getId());
+        return ResponseEntity.noContent().build();
     }
 }

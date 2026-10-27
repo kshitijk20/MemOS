@@ -1,8 +1,14 @@
 import { apiClient } from './client'
-import type { AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, RegistrationPolicy, UserResponse } from './types'
+import type { AuthResponse, LoginRequest, RefreshRequest, RegisterRequest, RegistrationPolicy, VerifySignupRequest } from './types'
 
-export async function register(payload: RegisterRequest): Promise<UserResponse> {
-  const response = await apiClient.post<UserResponse>('/api/v1/auth/register', payload)
+/** Emails a verification code. Always resolves the same way whether or not the account exists. */
+export async function register(payload: RegisterRequest): Promise<void> {
+  await apiClient.post('/api/v1/auth/register', payload)
+}
+
+/** Creates the account from the emailed code; returns tokens, so the user is signed in. */
+export async function verifyRegistration(payload: VerifySignupRequest): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>('/api/v1/auth/register/verify', payload)
   return response.data
 }
 

@@ -15,8 +15,8 @@ import com.memos.application.auth.PasswordResetService;
 import com.memos.application.auth.AuthResult;
 import com.memos.application.auth.LoginCommand;
 import com.memos.application.auth.RegisterCommand;
+import com.memos.application.auth.SignupService;
 import com.memos.application.auth.TokenPair;
-import com.memos.domain.user.User;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -30,19 +30,34 @@ public class AuthController {
 
     private final AuthApplicationService authApplicationService;
     private final PasswordResetService passwordResetService;
+    private final SignupService signupService;
 
+    /**
+     * Step 1 of sign-up: emails a verification code. Always answers 202 with the same message, so
+     * the endpoint can't be used to find out which emails have accounts.
+     */
     @PostMapping("/register")
-    public ResponseEntity<UserSummaryResponse> register(@Valid @RequestBody RegisterRequest request) {
-        User user = authApplicationService.register(
-                new RegisterCommand(request.email(), request.password(), request.fullName(), request.inviteCode()));
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserSummaryResponse.from(user));
+    public ResponseEntity<Map<String, String>> register(@Valid @RequestBody RegisterRequest request) {
+        signupService.requireRegistrationOpen();
+        signupService.startSignup(new RegisterCommand(request.email(), request.password(), request.fullName()));
+        return ResponseEntity.accepted().body(Map.of("message",
+                "We've sent a verification code to that email. Enter it to finish creating your account."));
     }
 
-    /** Public: lets the sign-up page show an invite-code field, or a "registration closed" notice. */
-    @GetMapping("/registration")
-    public ResponseEntity<AuthApplicationService.RegistrationPolicy> registration() {
-        return ResponseEntity.ok(authApplicationService.registrationPolicy());
+    /** Step 2 of sign-up: creates the account from the emailed code and signs the user in. */
+    @PostMapping("/register/verify")
+    public ResponseEntity<AuthResponse> verifyRegistration(@Valid @RequestBody VerifySignupRequest request) {
+        AuthResult result = signupService.verifySignup(request.email(), request.code());
+        return ResponseEntity.status(HttpStatus.CREATED).body(AuthResponse.from(result.tokens()));
     }
+
+    /** Public: lets the sign-up page show a "registration closed" notice. */
+    @GetMapping("/registration")
+    public ResponseEntity<RegistrationPolicy> registration() {
+        return ResponseEntity.ok(new RegistrationPolicy(signupService.registrationOpen()));
+    }
+
+    public record RegistrationPolicy(boolean open) {}
 
     /**
      * Emails a reset link if an account exists. Always answers 202 with the same message, so the

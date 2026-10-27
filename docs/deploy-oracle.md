@@ -83,8 +83,9 @@ Fill in `.env.prod`:
 | `JWT_SECRET` | output of `openssl rand -base64 64` (required; the app refuses to start without it) |
 | `GEMINI_API_KEY` | from <https://aistudio.google.com/apikey> |
 
-Recommended for a public server: set `MEMOS_INVITE_CODE` to something only you share, so
-strangers who find the URL can't create accounts. Per-user limits on questions, uploads and
+New accounts verify their email with an emailed code, so configure email (`BREVO_API_KEY`,
+`MAIL_FROM_EMAIL`, `MEMOS_FRONTEND_URL`); set `MEMOS_REGISTRATION_ENABLED=false` to close
+sign-up entirely. Per-user limits on questions, uploads and
 storage are on by default; adjust them in `.env.prod` if needed.
 
 Lock it down and start everything:

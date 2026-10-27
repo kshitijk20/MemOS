@@ -1,12 +1,15 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Eye, EyeOff, ExternalLink, HelpCircle, Lock, Mail, User } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Eye, EyeOff, ExternalLink, HelpCircle, Lock, LogOut, Mail, MonitorSmartphone, User } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfileQuery, useUpdateProfileMutation } from '@/hooks/useProfile'
+import { extractErrorMessage } from '@/api/client'
+import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import type { UserProfileResponse } from '@/api/types'
 
@@ -79,6 +82,7 @@ function PasswordField({
   onChange,
   placeholder,
   error,
+  autoComplete = 'new-password',
 }: {
   id: string
   label: string
@@ -86,6 +90,7 @@ function PasswordField({
   onChange: (value: string) => void
   placeholder: string
   error?: string
+  autoComplete?: string
 }) {
   const [visible, setVisible] = useState(false)
 
@@ -95,7 +100,7 @@ function PasswordField({
       label={label}
       icon={<Lock className="size-4" />}
       type={visible ? 'text' : 'password'}
-      autoComplete="new-password"
+      autoComplete={autoComplete}
       placeholder={placeholder}
       value={value}
       error={error}
@@ -138,17 +143,23 @@ export function SettingsPage() {
 
 function SettingsForm({ profile }: { profile: UserProfileResponse }) {
   const updateMutation = useUpdateProfileMutation()
+  const { login, logout, logoutEverywhere } = useAuth()
+  const navigate = useNavigate()
 
   const [fullName, setFullName] = useState(profile.fullName)
   const [email, setEmail] = useState(profile.email)
+  // Changing the email or password needs the current password, so a stolen session can't take over the account.
+  const [emailPassword, setEmailPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
 
-  const profileDirty =
-    (fullName.trim() !== profile.fullName || email.trim().toLowerCase() !== profile.email.toLowerCase())
+  const emailChanged = email.trim().toLowerCase() !== profile.email.toLowerCase()
+  const profileDirty = fullName.trim() !== profile.fullName || emailChanged
 
-  const canResetPassword = newPassword.length > 0 && confirmPassword.length > 0
+  const canResetPassword = currentPassword.length > 0 && newPassword.length > 0 && confirmPassword.length > 0
+  const [signingOutEverywhere, setSigningOutEverywhere] = useState(false)
 
   async function handleProfileSubmit(event: FormEvent) {
     event.preventDefault()
@@ -156,6 +167,7 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
       await updateMutation.mutateAsync({
         fullName: fullName.trim(),
         email: email.trim(),
+        currentPassword: emailChanged ? emailPassword : undefined,
       })
     } catch {
       // toast is shown by the mutation
@@ -176,15 +188,42 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
     }
 
     try {
-      await updateMutation.mutateAsync({
-        fullName: profile?.fullName ?? fullName,
-        email: profile?.email ?? email,
+      const updated = await updateMutation.mutateAsync({
+        fullName: profile.fullName,
+        email: profile.email,
+        currentPassword,
         newPassword,
       })
+      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
+      // Changing the password signs out every session, this one included; sign straight back in.
+      try {
+        await login(updated.email, newPassword)
+      } catch {
+        toast.info('Password changed. Please sign in again.')
+        await logout()
+        navigate('/login', { replace: true })
+      }
     } catch {
       // toast is shown by the mutation
+    }
+  }
+
+  async function handleLogout() {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+
+  async function handleLogoutEverywhere() {
+    setSigningOutEverywhere(true)
+    try {
+      await logoutEverywhere()
+      toast.success('Signed out on all devices')
+      navigate('/login', { replace: true })
+    } catch (error) {
+      toast.error(extractErrorMessage(error))
+      setSigningOutEverywhere(false)
     }
   }
 
@@ -192,7 +231,7 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-muted-foreground">Manage your account information and password.</p>
+        <p className="text-muted-foreground">Manage your account, password and sessions.</p>
       </div>
 
       <Card>
@@ -228,7 +267,21 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
               hint="We'll use this email for important notifications."
               onChange={(e) => setEmail(e.target.value)}
             />
-            <Button type="submit" className="h-10 w-full" disabled={!profileDirty || updateMutation.isPending}>
+            {emailChanged && (
+              <PasswordField
+                id="emailPassword"
+                label="Current password"
+                placeholder="Confirm it's you"
+                autoComplete="current-password"
+                value={emailPassword}
+                onChange={setEmailPassword}
+              />
+            )}
+            <Button
+              type="submit"
+              className="h-10 w-full"
+              disabled={!profileDirty || (emailChanged && !emailPassword) || updateMutation.isPending}
+            >
               {updateMutation.isPending && profileDirty ? 'Saving…' : 'Save changes'}
             </Button>
           </form>
@@ -241,12 +294,20 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
             <Lock className="size-4" />
           </SectionIcon>
           <div className="space-y-1">
-            <CardTitle>Reset password</CardTitle>
-            <CardDescription>Choose a new password to keep your account secure.</CardDescription>
+            <CardTitle>Change password</CardTitle>
+            <CardDescription>Other devices are signed out when you change it.</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handlePasswordSubmit} autoComplete="off" className="flex flex-col gap-4">
+            <PasswordField
+              id="currentPassword"
+              label="Current password"
+              placeholder="Enter current password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={setCurrentPassword}
+            />
             <PasswordField
               id="newPassword"
               label="New password"
@@ -271,9 +332,38 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
               className="h-10 w-full"
               disabled={!canResetPassword || updateMutation.isPending}
             >
-              {updateMutation.isPending && canResetPassword ? 'Updating…' : 'Reset password'}
+              {updateMutation.isPending && canResetPassword ? 'Updating…' : 'Change password'}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-start gap-3">
+          <SectionIcon className="bg-amber-500/15 text-amber-500">
+            <MonitorSmartphone className="size-4" />
+          </SectionIcon>
+          <div className="space-y-1">
+            <CardTitle>Sessions</CardTitle>
+            <CardDescription>
+              Signed in as {profile.email}. Lost a device or signed in somewhere public? Sign out everywhere.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row">
+          <Button variant="outline" className="h-10 flex-1" onClick={handleLogout}>
+            <LogOut className="size-4" />
+            Log out
+          </Button>
+          <Button
+            variant="outline"
+            className="h-10 flex-1 text-destructive hover:text-destructive"
+            disabled={signingOutEverywhere}
+            onClick={handleLogoutEverywhere}
+          >
+            <MonitorSmartphone className="size-4" />
+            {signingOutEverywhere ? 'Signing out…' : 'Log out of all devices'}
+          </Button>
         </CardContent>
       </Card>
 

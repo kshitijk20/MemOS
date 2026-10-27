@@ -1,21 +1,22 @@
 package com.memos.application.auth;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.time.Instant;
+import java.time.Duration;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.memos.domain.exception.AccessDeniedException;
-import com.memos.domain.exception.DuplicateResourceException;
+import com.memos.application.limits.RateLimiterPort;
 import com.memos.domain.exception.InvalidCredentialsException;
-import com.memos.domain.user.Role;
+import com.memos.domain.exception.RateLimitExceededException;
 import com.memos.domain.user.User;
 import com.memos.domain.user.UserRepositoryPort;
 
 import lombok.RequiredArgsConstructor;
 
+/** Sign-in and sessions. Creating accounts is {@link SignupService}. */
 @Service
 @RequiredArgsConstructor
 public class AuthApplicationService {
@@ -23,67 +24,36 @@ public class AuthApplicationService {
     private final UserRepositoryPort userRepositoryPort;
     private final PasswordHasherPort passwordHasherPort;
     private final TokenIssuerPort tokenIssuerPort;
+    private final RateLimiterPort rateLimiterPort;
 
-    /** Off: nobody can create accounts (existing users can still sign in). */
-    @Value("${memos.auth.registration-enabled:true}")
-    private boolean registrationEnabled = true;
+    /** Sign-in attempts per email per 15 minutes, so passwords can't be guessed at speed. */
+    @Value("${memos.auth.login-attempts-per-15-minutes:10}")
+    private int loginAttemptsPer15Minutes = 10;
 
-    /** When set, new accounts need this code, so only people you share it with can sign up. */
-    @Value("${memos.auth.invite-code:}")
-    private String inviteCode = "";
-
-    /** How sign-up works on this server, for the registration page. */
-    public record RegistrationPolicy(boolean open, boolean inviteCodeRequired) {}
-
-    public RegistrationPolicy registrationPolicy() {
-        return new RegistrationPolicy(registrationEnabled, registrationEnabled && hasInviteCode());
-    }
-
-    public User register(RegisterCommand command) {
-        if (!registrationEnabled) {
-            throw new AccessDeniedException("Registration is closed on this server.");
-        }
-        if (hasInviteCode() && !inviteCodeMatches(command.inviteCode())) {
-            throw new AccessDeniedException("That invite code isn't valid.");
-        }
-        if (userRepositoryPort.existsByEmail(command.email())) {
-            throw new DuplicateResourceException("An account with this email already exists");
-        }
-        User user = User.builder()
-                .email(command.email())
-                .passwordHash(passwordHasherPort.hash(command.rawPassword()))
-                .fullName(command.fullName())
-                .role(Role.USER)
-                .enabled(true)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
-        return userRepositoryPort.save(user);
-    }
-
-    private boolean hasInviteCode() {
-        return inviteCode != null && !inviteCode.isBlank();
-    }
-
-    /** Constant-time comparison, so the code can't be guessed one character at a time. */
-    private boolean inviteCodeMatches(String candidate) {
-        if (candidate == null) {
-            return false;
-        }
-        return MessageDigest.isEqual(
-                inviteCode.strip().getBytes(StandardCharsets.UTF_8),
-                candidate.strip().getBytes(StandardCharsets.UTF_8));
-    }
+    /** Compared against when the email is unknown, so response time doesn't reveal which emails exist. */
+    private volatile String dummyHash;
 
     public AuthResult login(LoginCommand command) {
-        User user = userRepositoryPort.findByEmail(command.email())
-                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
+        String email = command.email() == null ? "" : command.email().strip();
+        RateLimiterPort.Result limit = rateLimiterPort.tryAcquire(
+                "login:email:" + PasswordResetService.sha256Hex(email.toLowerCase(Locale.ROOT)),
+                loginAttemptsPer15Minutes, Duration.ofMinutes(15));
+        if (!limit.allowed()) {
+            throw new RateLimitExceededException(
+                    "Too many sign-in attempts for this account. Try again in a few minutes, or reset your password.",
+                    limit.retryAfterSeconds());
+        }
 
-        if (!user.isEnabled() || !passwordHasherPort.matches(command.rawPassword(), user.getPasswordHash())) {
+        Optional<User> user = userRepositoryPort.findByEmail(email);
+        if (user.isEmpty()) {
+            passwordHasherPort.matches(command.rawPassword(), dummyHash());
+            throw new InvalidCredentialsException("Invalid email or password");
+        }
+        if (!passwordHasherPort.matches(command.rawPassword(), user.get().getPasswordHash()) || !user.get().isEnabled()) {
             throw new InvalidCredentialsException("Invalid email or password");
         }
 
-        return new AuthResult(user, tokenIssuerPort.issueTokens(user));
+        return new AuthResult(user.get(), tokenIssuerPort.issueTokens(user.get()));
     }
 
     public TokenPair refresh(String refreshToken) {
@@ -92,5 +62,17 @@ public class AuthApplicationService {
 
     public void logout(String refreshToken) {
         tokenIssuerPort.revokeRefreshToken(refreshToken);
+    }
+
+    /** Signs the user out on every device (all refresh tokens revoked). */
+    public void logoutEverywhere(UUID userId) {
+        tokenIssuerPort.revokeAllForUser(userId);
+    }
+
+    private String dummyHash() {
+        if (dummyHash == null) {
+            dummyHash = passwordHasherPort.hash("memos-timing-equalizer");
+        }
+        return dummyHash;
     }
 }

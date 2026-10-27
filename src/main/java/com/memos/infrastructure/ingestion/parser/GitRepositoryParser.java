@@ -63,6 +63,7 @@ public class GitRepositoryParser implements DocumentParserPort {
 
     @Override
     public List<ParsedDocument> parse(Document document) {
+        PublicUrlGuard.requirePublicHttpsUrl(document.getSourceUri());
         Path tempDir;
         try {
             tempDir = Files.createTempDirectory("memos-git-");

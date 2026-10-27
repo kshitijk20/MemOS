@@ -62,9 +62,9 @@ export function AppShell() {
             >
               {resolvedTheme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Logout">
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="size-4" />
-              <span className="hidden sm:inline">Logout</span>
+              Log out
             </Button>
           </div>
         </div>
