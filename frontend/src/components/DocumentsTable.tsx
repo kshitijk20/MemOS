@@ -41,6 +41,7 @@ const SOURCE_TYPE_LABELS: Record<DocumentSourceType, string> = {
   MARKDOWN: 'Markdown',
   GIT_REPOSITORY: 'Git repository',
   WEB_PAGE: 'Web page',
+  IMAGE: 'Photo',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -55,7 +56,7 @@ function formatDate(value: string): string {
 }
 
 function isFileSource(sourceType: DocumentSourceType): boolean {
-  return sourceType === 'PDF' || sourceType === 'MARKDOWN'
+  return sourceType === 'PDF' || sourceType === 'MARKDOWN' || sourceType === 'IMAGE'
 }
 
 function IngestionProgressCell({ documentId }: { documentId: string }) {

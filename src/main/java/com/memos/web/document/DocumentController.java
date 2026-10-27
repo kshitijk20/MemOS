@@ -36,6 +36,7 @@ import com.memos.domain.document.DocumentRepositoryPort;
 import com.memos.domain.document.DocumentSourceType;
 import com.memos.domain.exception.IngestionException;
 import com.memos.domain.exception.ResourceNotFoundException;
+import com.memos.infrastructure.ingestion.parser.ImageDocumentParser;
 import com.memos.infrastructure.security.CustomUserPrincipal;
 import com.memos.web.common.PageResponse;
 
@@ -210,8 +211,7 @@ public class DocumentController {
             @PathVariable UUID id) {
 
         Document document = ownedDocument(principal.getId(), id);
-        if (document.getSourceType() == DocumentSourceType.PDF
-                || document.getSourceType() == DocumentSourceType.MARKDOWN) {
+        if (document.getSourceType().isUploadedFile()) {
             throw new IngestionException("Re-ingest of a file requires uploading the file again.");
         }
         document = documentIngestionService.reingest(document);
@@ -226,10 +226,8 @@ public class DocumentController {
             @RequestPart("file") MultipartFile file) {
 
         Document document = ownedDocument(principal.getId(), id);
-        boolean fileSource = document.getSourceType() == DocumentSourceType.PDF
-                || document.getSourceType() == DocumentSourceType.MARKDOWN;
-        if (!fileSource) {
-            throw new IngestionException("Upload a replacement file only for PDF or Markdown documents.");
+        if (!document.getSourceType().isUploadedFile()) {
+            throw new IngestionException("Upload a replacement file only for uploaded documents (PDF, Markdown, text or photo).");
         }
         if (file == null || file.isEmpty()) {
             throw new IngestionException("Re-ingest of a file requires uploading the file again.");
@@ -276,14 +274,25 @@ public class DocumentController {
         if (filename.endsWith(".pdf") || contentType.equals("application/pdf")) {
             return DocumentSourceType.PDF;
         }
-        if (filename.endsWith(".md") || filename.endsWith(".markdown") || contentType.equals("text/markdown")) {
+        // Plain text is valid Markdown, so .txt goes through the Markdown parser.
+        if (filename.endsWith(".md") || filename.endsWith(".markdown") || filename.endsWith(".txt")
+                || contentType.equals("text/markdown") || contentType.equals("text/plain")) {
             return DocumentSourceType.MARKDOWN;
         }
-        throw new IngestionException("Unsupported file type for '" + file.getOriginalFilename() + "'. Only PDF and Markdown files are supported.");
+        if (ImageDocumentParser.mimeTypeFor(filename) != null) {
+            return DocumentSourceType.IMAGE;
+        }
+        throw new IngestionException("Unsupported file type for '" + file.getOriginalFilename()
+                + "'. Upload a PDF, Markdown or text file, or a photo (JPG, PNG, WebP, HEIC).");
     }
 
     private StoredUpload storeTempFile(MultipartFile file, DocumentSourceType sourceType) {
-        String suffix = sourceType == DocumentSourceType.PDF ? ".pdf" : ".md";
+        String suffix = switch (sourceType) {
+            case PDF -> ".pdf";
+            // The image parser picks the MIME type from the extension, so keep the original one.
+            case IMAGE -> file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf('.')).toLowerCase(Locale.ROOT);
+            default -> ".md";
+        };
         try {
             byte[] bytes = file.getBytes();
             Path directory = Files.createDirectories(Path.of(uploadDir));

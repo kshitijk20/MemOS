@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,10 @@ import { extractErrorMessage } from '@/api/client'
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  // Only same-app paths, so a crafted link can't send the user to another site after sign-in.
+  const from = (location.state as { from?: string } | null)?.from
+  const returnTo = from?.startsWith('/') && !from.startsWith('//') ? from : '/documents'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +27,7 @@ export function LoginPage() {
     setIsPending(true)
     try {
       await login(email, password)
-      navigate('/documents', { replace: true })
+      navigate(returnTo, { replace: true })
     } catch (err) {
       setError(extractErrorMessage(err))
     } finally {

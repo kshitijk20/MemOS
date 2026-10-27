@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MAX_FILE_SIZE_BYTES, MAX_UPLOAD_MB } from '@/lib/upload-limit'
+import { UPLOAD_ACCEPT } from '@/lib/upload-types'
 import { useUploadDocumentMutation } from '@/hooks/useDocuments'
 
 
@@ -62,7 +63,7 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Upload document</DialogTitle>
-          <DialogDescription>Upload a PDF or Markdown file to ingest into MemOS.</DialogDescription>
+          <DialogDescription>Upload a PDF, Markdown or text file, or a photo of notes (its text is read automatically).</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
@@ -80,7 +81,7 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
             <Input
               id="doc-file"
               type="file"
-              accept=".pdf,.md,.markdown"
+              accept={UPLOAD_ACCEPT}
               required
               onChange={(e) => {
                 const selected = e.target.files?.[0] ?? null
@@ -92,7 +93,7 @@ export function DocumentUploadDialog({ open, onOpenChange }: DocumentUploadDialo
                 )
               }}
             />
-            <p className="text-xs text-muted-foreground">{`PDF or Markdown, up to ${MAX_UPLOAD_MB}MB.`}</p>
+            <p className="text-xs text-muted-foreground">{`PDF, Markdown, text, or a photo (JPG, PNG, WebP, HEIC), up to ${MAX_UPLOAD_MB}MB.`}</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

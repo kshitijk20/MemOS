@@ -146,6 +146,12 @@ memos:
         temperature: 0.3
         max-tokens: 1024
 
+    # OCR (photos, scanned PDF pages) uses Gemini's vision model; empty model = the chat model.
+    # Calls are paced under the free tier's requests-per-minute limit.
+    ocr:
+      model: ${MEMOS_OCR_MODEL:}
+      requests-per-minute: ${MEMOS_OCR_REQUESTS_PER_MINUTE:8}
+
   rag:
     top-k: ${MEMOS_RAG_TOP_K:5}
     history-window: ${MEMOS_RAG_HISTORY_WINDOW:10}
@@ -162,6 +168,9 @@ memos:
     chunk-size-tokens: 500
     chunk-overlap-tokens: 50
     max-upload-size-bytes: 52428800
+    # Scanned PDF pages read with OCR per document; each page is one Gemini vision call.
+    ocr:
+      max-pages: ${MEMOS_OCR_MAX_PAGES:30}
     # Where uploads wait until ingestion succeeds (kept on failure so Retry works). Defaults to
     # the OS temp dir; production mounts a volume here so it survives container restarts.
     upload-dir: ${MEMOS_UPLOAD_DIR:${java.io.tmpdir}}

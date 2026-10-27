@@ -9,3 +9,7 @@
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+
+# The service worker must update as soon as a new version is deployed.
+/sw.js
+  Cache-Control: no-cache

@@ -12,6 +12,8 @@ RUN mvn -q clean package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
+# Fonts for rendering scanned PDF pages to images for OCR (Alpine's JRE ships without them).
+RUN apk add --no-cache fontconfig ttf-dejavu
 RUN addgroup -S memos && adduser -S memos -G memos
 COPY --from=build /build/target/memos-backend.jar /app/memos-backend.jar
 # Pending uploads live here (see memos.ingestion.upload-dir). A named volume mounted on it

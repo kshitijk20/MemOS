@@ -14,6 +14,7 @@ import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
 import { ConversationsPage } from '@/pages/ConversationsPage'
 import { ConversationDetailPage } from '@/pages/ConversationDetailPage'
+import { SharePage } from '@/pages/SharePage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -38,6 +39,7 @@ function App() {
                   <Route path="/conversations" element={<ConversationsPage />} />
                   <Route path="/conversations/:id" element={<ConversationDetailPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/share" element={<SharePage />} />
                 </Route>
               </Route>
               <Route path="*" element={<NotFoundPage />} />

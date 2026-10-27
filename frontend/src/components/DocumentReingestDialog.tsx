@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MAX_FILE_SIZE_BYTES, MAX_UPLOAD_MB } from '@/lib/upload-limit'
 import { useReingestDocumentMutation } from '@/hooks/useDocuments'
+import { UPLOAD_ACCEPT } from '@/lib/upload-types'
 import type { DocumentResponse } from '@/api/types'
 
 
@@ -73,7 +74,7 @@ export function DocumentReingestDialog({ document, onOpenChange }: DocumentReing
             <Input
               id="reingest-file"
               type="file"
-              accept=".pdf,.md,.markdown"
+              accept={UPLOAD_ACCEPT}
               required
               onChange={(e) => {
                 const selected = e.target.files?.[0] ?? null

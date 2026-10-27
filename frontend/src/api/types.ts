@@ -60,7 +60,7 @@ export interface RefreshRequest {
 
 // --- Documents ---
 
-export type DocumentSourceType = 'PDF' | 'MARKDOWN' | 'GIT_REPOSITORY' | 'WEB_PAGE'
+export type DocumentSourceType = 'PDF' | 'MARKDOWN' | 'GIT_REPOSITORY' | 'WEB_PAGE' | 'IMAGE'
 export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 
 export interface DocumentResponse {

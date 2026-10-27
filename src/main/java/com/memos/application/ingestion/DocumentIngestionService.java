@@ -201,7 +201,7 @@ public class DocumentIngestionService {
                 String branch = metadataString(document, "branch");
                 yield document.getSourceUri() == null ? null : SourceFingerprint.forGit(document.getSourceUri(), branch);
             }
-            case PDF, MARKDOWN -> null;
+            case PDF, MARKDOWN, IMAGE -> null;
         };
     }
 
@@ -224,8 +224,7 @@ public class DocumentIngestionService {
     }
 
     private void ensureSourceAvailable(Document document) {
-        DocumentSourceType type = document.getSourceType();
-        if (type != DocumentSourceType.PDF && type != DocumentSourceType.MARKDOWN) {
+        if (!document.getSourceType().isUploadedFile()) {
             return;
         }
         String sourceUri = document.getSourceUri();
@@ -298,8 +297,7 @@ public class DocumentIngestionService {
 
     private void deleteTempSourceFile(Document document) {
         if (document == null) return;
-        DocumentSourceType type = document.getSourceType();
-        if (type != DocumentSourceType.PDF && type != DocumentSourceType.MARKDOWN) return;
+        if (!document.getSourceType().isUploadedFile()) return;
         String sourceUri = document.getSourceUri();
         if (sourceUri == null || !sourceUri.contains("memos-upload-")) return;
         try {

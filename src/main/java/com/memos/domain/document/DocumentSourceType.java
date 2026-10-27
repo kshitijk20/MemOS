@@ -11,5 +11,12 @@ public enum DocumentSourceType {
     PDF,
     MARKDOWN,
     GIT_REPOSITORY,
-    WEB_PAGE
+    WEB_PAGE,
+    /** A photo or screenshot (notes, whiteboard, receipt); its text is read with OCR. */
+    IMAGE;
+
+    /** Uploaded by the user (kept on disk until ingested), as opposed to fetched from a URL. */
+    public boolean isUploadedFile() {
+        return this == PDF || this == MARKDOWN || this == IMAGE;
+    }
 }
