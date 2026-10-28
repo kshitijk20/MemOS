@@ -1,239 +1,137 @@
-# MemOS Backend
+# MemOS
 
-MemOS is a RAG (Retrieval-Augmented Generation) knowledge assistant backend. It lets users
-upload documents (PDF, Markdown, or entire Git repositories), automatically chunks and embeds
-their content into PGVector, and answers natural-language questions about that content via an
-LLM — with every answer backed by citations pointing back to the source chunks.
+**Ask questions about your own documents, notes and saved pages, and get answers that cite the exact passage they came from.**
 
-Built with Java 21, Spring Boot 3, PostgreSQL + pgvector, Redis, and a clean hexagonal
-architecture (`domain` / `application` / `infrastructure` / `web`) so new ingestion sources
-(GitHub issues, Jira, Confluence, Slack, ...) and AI providers can be added as new adapters
-without touching core business logic.
+[**Try it live →**](https://memos-ai.byte-phantom.workers.dev) &nbsp;·&nbsp; Java 21 · Spring Boot · Postgres + pgvector · Redis · React
 
-## Features
+![An answer citing a scanned expense policy, with the supporting sentences highlighted](docs/images/citation.png)
 
-- **JWT authentication** — register/login/refresh/logout with BCrypt password hashing.
-- **Document ingestion** — upload PDF or Markdown files, or point at a Git repository (cloned
-  via JGit, walked and filtered by file extension). Ingestion runs asynchronously; poll the
-  document's status until `COMPLETED`.
-- **Semantic chunking** — paragraph/heading-aware recursive splitting with configurable token
-  size and overlap.
-- **PGVector storage & retrieval** — chunk embeddings stored in a `vector(768)` column with an
-  HNSW index, queried via cosine similarity (`<=>`) scoped to the authenticated user's own
-  documents.
-- **Pluggable AI providers** — `ChatPort` / `EmbeddingPort` abstractions with adapters for
-  **Gemini** (default, free tier), **OpenAI**, and **Claude**. Conversations can select a
-  provider/model per-conversation.
-- **Conversational RAG** — each question retrieves the top-K most relevant chunks, builds a
-  prompt with conversation history, calls the resolved chat provider, and persists the
-  assistant's reply together with `Citation` records (source document, chunk, snippet, score).
-- **Caching** — Redis-backed embedding cache (1h TTL) to avoid re-spending free-tier embedding
-  quota on repeated text.
-- **OpenAPI/Swagger UI**, Actuator health/info endpoints, global exception handling with
-  consistent error responses.
+*The answer above comes from a **scanned PDF** with no text layer. MemOS read it with OCR, found the right passage, and highlights the sentences the answer is based on.*
 
-## Tech Stack
+## What it does
 
-| Concern          | Choice                                                            |
-|------------------|--------------------------------------------------------------------|
-| Language/runtime | Java 21, Spring Boot 3.4.5                                         |
-| Database         | PostgreSQL 16 + pgvector extension                                 |
-| Cache            | Redis 7                                                            |
-| Migrations       | Flyway                                                              |
-| Security         | Spring Security + JWT (jjwt)                                       |
-| AI providers     | Gemini (default, via OpenAI-compatible endpoint), OpenAI, Claude   |
-| Parsing          | Apache PDFBox (PDF), CommonMark (Markdown), JGit (Git repos)       |
-| Build            | Maven                                                               |
-| Tests            | JUnit 5, Mockito, Spring MockMvc, Testcontainers (pgvector)        |
+- **Add almost anything.** PDFs, Markdown or text files, web pages, whole Git repositories, **photos of handwritten notes** and **scanned documents**.
+- **Ask in plain language.** Answers stream in as they're written, and every claim links to its source. Click a citation to see the passage, with the matching sentences highlighted.
+- **Honest when it doesn't know.** If your documents don't contain the answer, it says so instead of making one up.
+- **Save from any app.** On Android, MemOS installs as an app and appears in the share menu: share a link, a file or a photo straight into it.
+- **Organize and focus.** Group documents into collections, and limit a conversation to one collection or a few documents.
+- **Works on phones.** The layout is responsive, with a bottom tab bar on small screens.
 
-## Architecture
+<p>
+  <img src="docs/images/documents.png" alt="Documents page with a web page, Markdown, a photo and a scanned PDF, all ingested" width="66%">
+  &nbsp;
+  <img src="docs/images/chat-mobile.png" alt="A conversation on a phone" width="28%">
+</p>
 
-```
-com.memos
-├── domain/          pure Java models, repository ports, AI ports — no framework dependencies
-├── application/      use-case orchestration (auth, ingestion, RAG, conversations)
-├── infrastructure/    adapters: persistence (JPA + pgvector), security (JWT), AI clients
-│                       (Gemini/OpenAI/Claude), document parsers, chunking, Redis cache
-└── web/               REST controllers, request/response DTOs, global exception handling
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph Ingestion["Adding a document (async)"]
+        A[Upload, URL, Git repo<br/>or shared from a phone] --> B[Parse<br/>PDFBox · Jsoup · JGit]
+        B -->|scanned page or photo| O[OCR<br/>Gemini vision]
+        O --> C
+        B --> C[Chunk<br/>paragraph-aware, with overlap]
+        C --> D[Embed<br/>Gemini, paced to the free tier]
+        D --> P[(Postgres<br/>pgvector + full-text)]
+    end
+    subgraph Question["Answering a question"]
+        Q[Question] --> R1[Vector search]
+        Q --> R2[Keyword search]
+        P -.-> R1
+        P -.-> R2
+        R1 --> F[Reciprocal Rank Fusion<br/>+ rerank]
+        R2 --> F
+        F --> L[LLM with numbered sources]
+        L --> ANS[Streamed answer<br/>with citations]
+    end
 ```
 
-The `application` layer depends only on `domain` ports. `infrastructure` provides the concrete
-adapters. `web` is the only layer that knows about HTTP. This keeps the RAG/ingestion/auth logic
-testable in isolation (see `src/test/java/com/memos/application/**` and
-`src/test/java/com/memos/infrastructure/ingestion/**`) and makes it straightforward to add a new
-ingestion source: implement `DocumentParserPort`, register it in
-`infrastructure/ingestion/parser/DocumentParserRegistry`, and add the corresponding
-`DocumentSourceType` — no changes required to `DocumentIngestionService`.
+## Engineering decisions
 
-**Known limitation:** the `document_chunks.embedding` column is fixed at `vector(768)` to match
-Gemini's `gemini-embedding-001` model truncated to 768 dimensions (the default, free embedding
-provider). Switching
-`memos.ai.embedding.provider` to OpenAI (1536 dims) would require a new Flyway migration to
-alter the column and re-embedding all existing chunks — out of scope for this version.
+**Hybrid retrieval.** Vector search is good at meaning but misses exact terms like names, error codes and numbers. MemOS runs pgvector similarity search and Postgres full-text search side by side, merges the two rankings with **Reciprocal Rank Fusion**, then reranks by word overlap with the question.
 
-## Getting Started
+**Grounded answers.** Retrieved passages are numbered in the prompt, and the model must cite them as `[n]`. When nothing relevant is found, it returns a "not found" answer instead of guessing. Users can rate answers, and a dashboard lists the ones marked unhelpful.
 
-### Prerequisites
+**Resumable, crash-safe ingestion.** Ingestion runs asynchronously with live progress. Each chunk's embedding is cached in Redis, so retrying a failed document skips the work already done, and uploads are kept on disk until ingestion succeeds. Documents stuck mid-ingestion after a restart are detected and marked failed so they can be retried.
 
-- Java 21
-- Maven (or use the included setup — any standard `mvn`)
-- Docker + Docker Compose (for Postgres/Redis, or the full containerized stack)
-- A free [Gemini API key](https://aistudio.google.com/app/apikey) (Google AI Studio) — no
-  paid subscription needed for the default configuration
+**OCR without native dependencies.** Photos and scanned PDF pages are read with Gemini's vision model rather than a classic OCR engine. It handles handwriting and phone photos much better and needs no native libraries on the server. Only pages that contain an image and no text are sent, calls are paced under the free tier's rate limit, and each document is capped at 30 OCR pages.
 
-### 1. Configure environment
+**Built for free-tier limits.** It runs entirely on free plans: a 512 MB backend (Render), serverless Postgres (Neon), Redis (Upstash) and the frontend on Cloudflare Workers. Embeddings are sent in small batches paced to Gemini's tokens-per-minute quota. Per-user limits on questions, ingestions and storage stop one account from using up the shared AI quota.
+
+**Security.**
+- **Sign-up:** new accounts verify their email with a single-use 6-digit code, and the sign-up form doesn't reveal which emails already have accounts.
+- **Sessions:** JWT access tokens last 15 minutes. Refresh tokens are rotated on every use and stored only as hashes. Users can log out of all devices.
+- **Login:** attempts are rate-limited per account, and unknown emails take as long to reject as wrong passwords, so timing doesn't reveal which accounts exist.
+- **Account changes:** changing your email or password requires the current password.
+- **Server-side request forgery:** URL and Git imports resolve the host and refuse private and local addresses, checking every redirect too. Otherwise a user could make the server read internal services and see the results through chat.
+- **Browser:** the frontend sends a strict Content-Security-Policy and other security headers.
+
+**Hexagonal architecture.** The code is split into `domain` (models and ports, no framework), `application` (use cases), `infrastructure` (adapters for Postgres, Redis, AI providers, parsers, email) and `web` (REST). Adding a source type means adding a parser and an enum value; the ingestion pipeline doesn't change. Gemini, OpenAI and Claude sit behind the same chat port.
+
+## Tech stack
+
+| | |
+|---|---|
+| **Backend** | Java 21, Spring Boot 3.4, Spring Security (JWT), Spring AI, Flyway |
+| **Data** | PostgreSQL + pgvector (HNSW index), Postgres full-text search, Redis |
+| **AI** | Gemini for chat, embeddings and OCR by default; OpenAI and Claude adapters |
+| **Parsing** | PDFBox, Jsoup, JGit, CommonMark |
+| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS 4, shadcn/ui, TanStack Query; installable PWA |
+| **Email** | Brevo HTTP API |
+| **Testing** | JUnit 5, Mockito, MockMvc, Testcontainers (real pgvector); GitHub Actions CI |
+| **Hosting** | Render, Neon, Upstash, Cloudflare Workers, all on free plans |
+
+## Running locally
+
+**Prerequisites:** Java 21, Docker, Node 22, and a free [Gemini API key](https://aistudio.google.com/apikey).
 
 ```bash
+# 1. Configure: set GEMINI_API_KEY and JWT_SECRET (openssl rand -base64 64)
 cp .env.example .env
-```
 
-Edit `.env` and set at minimum:
-
-- `GEMINI_API_KEY` — your free key from Google AI Studio
-- `JWT_SECRET` — **required**; the app refuses to start without it (or with a sample or short value). Generate with `openssl rand -base64 64`
-
-`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are optional; only required if you set
-`MEMOS_DEFAULT_AI_PROVIDER` (or a per-conversation `provider`) to `OPENAI` or `CLAUDE`, and you
-must supply your own paid keys for those.
-
-### 2. Run dependencies
-
-```bash
+# 2. Start Postgres (with pgvector) and Redis
 docker compose up -d postgres redis
+
+# 3. Start the backend on http://localhost:8080 (database migrations run automatically)
+set -a; source .env; set +a
+DB_HOST=localhost REDIS_HOST=localhost ./mvnw spring-boot:run
+
+# 4. Start the frontend on http://localhost:3000
+cd frontend && npm install && npm run dev
 ```
 
-Flyway migrations run automatically on application startup.
+Without email configured, sign-up codes and password-reset links are printed in the backend log. API docs are at `http://localhost:8080/swagger-ui.html`.
 
-### 3. Run the application
+## Deploying
 
-```bash
-export $(grep -v '^#' .env | xargs)   # or source .env in your shell
-./mvnw spring-boot:run
-```
+- **Free, no server:** [docs/deploy-free.md](docs/deploy-free.md) covers Render, Neon, Upstash and Cloudflare Workers (`render.yaml` and `frontend/wrangler.jsonc`).
+- **Single server:** [docs/deploy-oracle.md](docs/deploy-oracle.md) runs the whole stack with `docker-compose.prod.yml`: Postgres, Redis, backend, frontend and Caddy with automatic HTTPS, plus nightly backups.
 
-The app starts on `http://localhost:8080`. Swagger UI is at
-`http://localhost:8080/swagger-ui.html`, Actuator health at
-`http://localhost:8080/actuator/health`.
+## API
 
-### Full containerized stack
+Everything is under `/api/v1`, and every endpoint except `/auth/**` needs `Authorization: Bearer <token>`. The full reference is in Swagger UI.
 
-```bash
-docker compose up --build
-```
-
-This builds the app image (multi-stage Dockerfile: Maven build → `eclipse-temurin:21-jre`
-runtime) and starts Postgres, Redis, and the app together.
-
-## Deploying to Production
-
-`docker-compose.prod.yml` runs the full stack on one server: Postgres + pgvector, Redis, the
-backend, the frontend (nginx) and Caddy, which serves everything on one domain with automatic
-HTTPS, plus nightly database backups. Copy `.env.prod.example` to `.env.prod`, fill it in, and run:
-
-```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-```
-
-Step-by-step guide for a free Oracle Cloud ARM server: [docs/deploy-oracle.md](docs/deploy-oracle.md).
-
-No server or card: [docs/deploy-free.md](docs/deploy-free.md) deploys the backend to Render
-(`render.yaml`), the database to Neon, Redis to Upstash and the frontend to Cloudflare Pages.
-
-## API Overview
-
-All endpoints are under `/api/v1` and require a `Bearer <accessToken>` JWT except the
-`/auth/**` endpoints.
-
-| Method | Path                                  | Description                                  |
-|--------|---------------------------------------|-----------------------------------------------|
-| POST   | `/auth/register`                      | Create an account                              |
-| POST   | `/auth/login`                         | Get an access/refresh token pair               |
-| POST   | `/auth/refresh`                       | Exchange a refresh token for a new pair        |
-| POST   | `/auth/logout`                        | Revoke a refresh token                         |
-| POST   | `/documents/upload`                   | Upload a PDF/Markdown file (multipart)         |
-| POST   | `/documents/git`                      | Ingest a Git repository by URL                 |
-| GET    | `/documents`                          | List your documents (paginated)                |
-| GET    | `/documents/{id}`                     | Get document detail/status                     |
-| GET    | `/documents/{id}/chunks`              | Inspect a document's chunks (paginated)        |
-| DELETE | `/documents/{id}`                     | Delete a document and its chunks               |
-| POST   | `/conversations`                      | Create a conversation (optional provider/model)|
-| GET    | `/conversations`                      | List your conversations (paginated)            |
-| GET    | `/conversations/{id}`                 | Get conversation detail                        |
-| DELETE | `/conversations/{id}`                 | Delete a conversation                          |
-| GET    | `/conversations/{id}/messages`        | List messages (paginated)                      |
-| POST   | `/conversations/{id}/messages`        | Ask a question — runs the RAG pipeline         |
-
-### Example flow
-
-```bash
-# Register
-curl -X POST localhost:8080/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"super-secret","fullName":"Alice"}'
-
-# Login
-TOKEN=$(curl -s -X POST localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"super-secret"}' | jq -r .accessToken)
-
-# Upload a markdown doc
-curl -X POST localhost:8080/api/v1/documents/upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F file=@notes.md -F title="My Notes"
-
-# Poll status until COMPLETED, then create a conversation and ask a question
-CONV_ID=$(curl -s -X POST localhost:8080/api/v1/conversations \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"Notes Q&A"}' | jq -r .id)
-
-curl -X POST localhost:8080/api/v1/conversations/$CONV_ID/messages \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"content":"What are my notes about?"}'
-```
-
-The response includes the assistant's reply plus a `citations[]` array referencing the
-document/chunk(s) used to ground the answer.
-
-## Configuration Reference
-
-Key settings (see `application.yml` for the full list and defaults):
-
-| Property                              | Purpose                                          |
-|----------------------------------------|--------------------------------------------------|
-| `memos.ai.default-provider`            | `GEMINI` (default) \| `OPENAI` \| `CLAUDE`        |
-| `memos.ai.providers.*`                 | Per-provider API key, base URL, model, temperature|
-| `memos.rag.top-k`                      | Number of chunks retrieved per question (default 5)|
-| `memos.rag.history-window`             | Conversation messages included in the prompt     |
-| `memos.ingestion.chunk-size-tokens`    | Target chunk size (default 500)                   |
-| `memos.ingestion.chunk-overlap-tokens` | Overlap between chunks (default 50)               |
-| `memos.ingestion.git.allowed-extensions`| File extensions ingested from Git repos          |
-| `memos.jwt.*`                          | JWT secret and access/refresh token TTLs          |
+| Area | Endpoints |
+|---|---|
+| **Auth** | `POST /auth/register` (emails a code) · `POST /auth/register/verify` · `POST /auth/login` · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/password-reset/request` · `POST /auth/password-reset/confirm` |
+| **Account** | `GET`/`PATCH /users/me` · `POST /users/me/logout-everywhere` |
+| **Documents** | `POST /documents/upload` · `POST /documents/url` · `POST /documents/git` · `GET /documents` · `GET /documents/{id}/progress` · `POST /documents/{id}/retry` · `POST /documents/{id}/reingest` · `DELETE /documents/{id}` |
+| **Conversations** | `POST /conversations` · `POST /conversations/{id}/messages` · `POST /conversations/{id}/messages/stream` (SSE) · `PATCH /conversations/{id}/scope` · `PUT /conversations/{id}/messages/{messageId}/feedback` |
+| **Other** | `/collections` · `/feedback` · `/stats` |
 
 ## Testing
 
 ```bash
-./mvnw test                 # unit + web-layer tests (Mockito, MockMvc)
-./mvnw verify                # also runs Testcontainers integration tests (requires Docker)
+./mvnw verify                          # unit, web-layer and Testcontainers integration tests (needs Docker)
+cd frontend && npm run lint && npm run build
 ```
 
-- Unit tests cover the chunking adapter, ingestion service, auth service, and the RAG query
-  service (all with mocked ports — no Spring context).
-- Web-layer tests (`@WebMvcTest` + MockMvc + spring-security-test) cover auth, document, and
-  conversation controllers.
-- `DocumentChunkRepositoryAdapterIT` spins up `pgvector/pgvector:pg16` via Testcontainers and
-  verifies cosine-similarity ordering, owner scoping, and status filtering for the retrieval
-  query — this test requires Docker to be available.
+Both run in GitHub Actions on every push. The integration tests run the real retrieval queries against `pgvector/pgvector` in a container.
 
-## Extending MemOS
+## Limitations and next steps
 
-To add a new ingestion source (e.g. Confluence):
-
-1. Add a value to `DocumentSourceType`.
-2. Implement `DocumentParserPort` (return one `ParsedDocument` per logical unit, e.g. per page).
-3. Register the parser in `DocumentParserRegistry`.
-4. Add a controller endpoint (or scheduled job) that calls `DocumentIngestionService.submit(...)`
-   followed by `.ingest(...)`.
-
-To add a new AI provider, implement `ChatPort` (and `EmbeddingPort` if it should also serve
-embeddings), register it in `ChatPortResolver`, and add its config block under
-`memos.ai.providers`.
+- **Retrieval evaluation.** Next up: a fixed set of questions with known answers, scored with recall@k and MRR, so retrieval changes are measured rather than eyeballed. One known weak spot it should capture is a single question that spans two unrelated documents, where often only one of them is retrieved.
+- **Email changes aren't verified yet.** Sign-up verifies the address, but changing it later only asks for the password.
+- **Sharing works on Android only.** iPhone Safari doesn't support web share targets; on iPhone, the upload button opens the camera instead.
+- **Embedding dimensions are fixed** at 768 (Gemini). Switching to another embedding provider needs a migration and re-embedding everything.
