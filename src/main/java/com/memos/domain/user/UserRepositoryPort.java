@@ -15,4 +15,7 @@ public interface UserRepositoryPort {
     Optional<User> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    /** Deletes the user; everything they own is removed with them (database cascades). */
+    void deleteById(UUID id);
 }

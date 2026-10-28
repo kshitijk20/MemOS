@@ -97,6 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession()
   }
 
+  async function deleteAccount(password: string) {
+    await usersApi.deleteAccount(password)
+    clearSession()
+  }
+
   /** Forget tokens and cached data, so the next person on this browser sees nothing of this account. */
   function clearSession() {
     setAccessToken(null)
@@ -116,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verifyRegistration,
         logout,
         logoutEverywhere,
+        deleteAccount,
         updateUser,
       }}
     >

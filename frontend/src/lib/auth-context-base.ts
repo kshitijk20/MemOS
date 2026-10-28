@@ -20,6 +20,8 @@ export interface AuthContextValue {
   logout: () => Promise<void>
   /** Signs out on every device, then here. */
   logoutEverywhere: () => Promise<void>
+  /** Permanently deletes the account (needs the password), then signs out here. */
+  deleteAccount: (password: string) => Promise<void>
   updateUser: (patch: Partial<AuthUser>) => void
 }
 

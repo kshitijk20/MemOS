@@ -12,6 +12,7 @@ import { useConversationQuery, useMessagesQuery, useUpdateConversationScopeMutat
 import { scopeOf } from '@/lib/scope'
 import { streamMessage } from '@/api/conversations'
 import { extractErrorMessage } from '@/api/client'
+import { useChatViewport } from '@/hooks/useChatViewport'
 
 export function ConversationDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -28,6 +29,8 @@ export function ConversationDetailPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const pageHeight = useChatViewport(pageRef)
   /** Follow new content only while the reader is at (or near) the bottom of the chat. */
   const stickToBottomRef = useRef(true)
   const tokenBufferRef = useRef('')
@@ -114,7 +117,12 @@ export function ConversationDetailPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-11rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col gap-3 md:h-[calc(100dvh-8rem)] md:gap-4">
+    <div
+      ref={pageRef}
+      // The CSS height is a fallback until useChatViewport has measured the visible area.
+      style={pageHeight ? { height: pageHeight } : undefined}
+      className="flex h-[calc(100dvh-11rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col gap-3 md:h-[calc(100dvh-8rem)] md:gap-4"
+    >
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon-sm" asChild>
           <Link to="/conversations">

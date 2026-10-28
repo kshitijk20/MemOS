@@ -75,6 +75,7 @@ export function AppShell() {
       </main>
       <nav
         aria-label="Main"
+        data-bottom-nav
         className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       >
         <div className="mx-auto grid h-16 max-w-md grid-cols-4">

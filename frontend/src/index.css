@@ -129,6 +129,13 @@
     }
 }
 
+/* Set while a chat is open (useChatViewport): only the message list scrolls, never the page. */
+html.scroll-locked,
+html.scroll-locked body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 @keyframes indeterminate {
   0%   { left: -33%; }
   100% { left: 100%; }

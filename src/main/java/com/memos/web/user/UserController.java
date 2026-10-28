@@ -3,6 +3,7 @@ package com.memos.web.user;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.memos.application.auth.AuthApplicationService;
+import com.memos.application.user.AccountDeletionService;
 import com.memos.application.user.UpdateProfileCommand;
 import com.memos.application.user.UserProfileService;
 import com.memos.domain.user.User;
@@ -30,6 +32,7 @@ public class UserController {
 
     private final UserProfileService userProfileService;
     private final AuthApplicationService authApplicationService;
+    private final AccountDeletionService accountDeletionService;
 
     @GetMapping("/me")
     public ResponseEntity<UserSummaryResponse> getProfile(@AuthenticationPrincipal CustomUserPrincipal principal) {
@@ -51,6 +54,15 @@ public class UserController {
                         request.newPassword()));
 
         return ResponseEntity.ok(UserSummaryResponse.from(updated));
+    }
+
+    /** Permanently deletes the account and all its data; needs the password. */
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteAccount(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @Valid @RequestBody DeleteAccountRequest request) {
+        accountDeletionService.deleteAccount(principal.getId(), request.password());
+        return ResponseEntity.noContent().build();
     }
 
     /** Signs out every device, including this one once its access token expires. */

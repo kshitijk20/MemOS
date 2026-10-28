@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -12,12 +12,18 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const [value, setValue] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   function handleSend() {
     const trimmed = value.trim()
     if (trimmed === '' || disabled) return
     onSend(trimmed)
     setValue('')
+    // On phones, close the keyboard so the answer has room. Done explicitly rather than as a side
+    // effect of disabling the field, which leaves iOS Safari's page offset behind.
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      textareaRef.current?.blur()
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -30,6 +36,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   return (
     <div className="flex items-end gap-2">
       <Textarea
+        ref={textareaRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}

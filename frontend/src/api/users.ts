@@ -6,6 +6,11 @@ export async function getProfile(): Promise<UserProfileResponse> {
   return response.data
 }
 
+/** Permanently deletes the account and everything in it. */
+export async function deleteAccount(password: string): Promise<void> {
+  await apiClient.delete('/api/v1/users/me', { data: { password } })
+}
+
 /** Revokes every session of the current user, on all devices. */
 export async function logoutEverywhere(): Promise<void> {
   await apiClient.post('/api/v1/users/me/logout-everywhere')

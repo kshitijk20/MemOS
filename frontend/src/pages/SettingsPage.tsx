@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Eye, EyeOff, ExternalLink, HelpCircle, Lock, LogOut, Mail, MonitorSmartphone, User } from 'lucide-react'
+import { Eye, EyeOff, ExternalLink, HelpCircle, Lock, LogOut, Mail, MonitorSmartphone, Trash2, User } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfileQuery, useUpdateProfileMutation } from '@/hooks/useProfile'
+import { DeleteAccountDialog } from '@/components/DeleteAccountDialog'
 import { extractErrorMessage } from '@/api/client'
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
@@ -160,6 +161,7 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
 
   const canResetPassword = currentPassword.length > 0 && newPassword.length > 0 && confirmPassword.length > 0
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   async function handleProfileSubmit(event: FormEvent) {
     event.preventDefault()
@@ -386,6 +388,27 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
           </Button>
         </CardContent>
       </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader className="flex flex-row items-start gap-3">
+          <SectionIcon className="bg-destructive/10 text-destructive">
+            <Trash2 className="size-4" />
+          </SectionIcon>
+          <div className="space-y-1">
+            <CardTitle>Delete account</CardTitle>
+            <CardDescription>
+              Permanently delete your account and everything in it: documents, conversations and collections.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Button variant="destructive" className="h-10 w-full sm:w-auto" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="size-4" />
+            Delete account
+          </Button>
+        </CardContent>
+      </Card>
+      <DeleteAccountDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
     </div>
   )
 }
