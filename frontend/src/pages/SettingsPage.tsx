@@ -353,13 +353,13 @@ function SettingsForm({ profile }: { profile: UserProfileResponse }) {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">
-          <Button variant="outline" className="h-10 flex-1" onClick={handleLogout}>
+          <Button variant="outline" className="h-10 sm:flex-1" onClick={handleLogout}>
             <LogOut className="size-4" />
             Log out
           </Button>
           <Button
             variant="outline"
-            className="h-10 flex-1 text-destructive hover:text-destructive"
+            className="h-10 text-destructive sm:flex-1 hover:text-destructive"
             disabled={signingOutEverywhere}
             onClick={handleLogoutEverywhere}
           >

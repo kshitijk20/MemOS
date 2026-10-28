@@ -250,10 +250,10 @@ export function SharePage() {
             </div>
           ))}
           <div className="flex flex-col gap-2 sm:flex-row-reverse">
-            <Button className="h-10 flex-1" disabled={isSaving || savable.length === 0} onClick={handleSave}>
+            <Button className="h-10 sm:flex-1" disabled={isSaving || savable.length === 0} onClick={handleSave}>
               {isSaving ? 'Saving…' : savable.length === 1 ? 'Save' : `Save ${savable.length} items`}
             </Button>
-            <Button variant="outline" className="h-10 flex-1" disabled={isSaving} onClick={handleDiscard}>
+            <Button variant="outline" className="h-10 sm:flex-1" disabled={isSaving} onClick={handleDiscard}>
               Discard
             </Button>
           </div>
